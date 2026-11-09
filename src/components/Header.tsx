@@ -4,8 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import AccountMenu, { ACCOUNT_LINKS, Avatar, useSignOutToHome } from "@/components/account/AccountMenu";
 import Logo from "@/components/Logo";
 import { languages, nav, searchIndex, type NavItem } from "@/content/site";
+import { useAuth } from "@/lib/auth";
 import { overlayKey, overlayNone, overlayReducer } from "@/lib/machines/overlay";
 
 function Caret() {
@@ -42,11 +44,14 @@ function slugify(label: string) {
  * - `overlay` (lib/machines/overlay.ts): which ONE of mega-menu / language list /
  *   search / mobile drawer is open. Exposed as `data-overlay` on <header>.
  * - headroom (`hidden`, `solid`): derived from scroll position.
+ * When signed in (useAuth), the "Login" menu becomes the account menu (overlay id "account").
  */
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [overlay, dispatch] = useReducer(overlayReducer, overlayNone);
+  const { account } = useAuth();
+  const signOutToHome = useSignOutToHome();
   const [hidden, setHidden] = useState(false);
   const [solid, setSolid] = useState(false);
   const [query, setQuery] = useState("");
@@ -228,6 +233,18 @@ export default function Header() {
           <ul className="main-nav__list" onMouseLeave={scheduleClose}>
             {nav.map((item) => {
               const isOpen = openMenu === item.label;
+              if (account && item.label === "Login") {
+                return (
+                  <li key="account" className="main-nav__item main-nav__item--end main-nav__item--account" onMouseEnter={cancelClose}>
+                    <AccountMenu
+                      account={account}
+                      tone="light"
+                      open={openMenu === "account"}
+                      onOpenChange={(v) => dispatch(v ? { type: "TOGGLE_MENU", id: "account" } : { type: "CLOSE_MENU" })}
+                    />
+                  </li>
+                );
+              }
               return (
                 <li
                   key={item.label}
@@ -359,7 +376,28 @@ export default function Header() {
       {/* Mobile drawer */}
       <div className={`mobile-menu${mobileOpen ? " is-open" : ""}`} aria-hidden={!mobileOpen}>
         <ul className="mobile-menu__list">
-          {nav.map((item) => (
+          {nav.map((item) =>
+            account && item.label === "Login" ? (
+              <li key="account" className="mobile-account">
+                <div className="mobile-account__who">
+                  <Avatar account={account} size={40} />
+                  <span>
+                    <strong>{account.name}</strong>
+                    <em>{account.email}</em>
+                  </span>
+                </div>
+                <div className="mobile-account__links">
+                  {ACCOUNT_LINKS.map((l) => (
+                    <Link key={l.href} href={l.href} tabIndex={mobileOpen ? 0 : -1}>
+                      {l.label}
+                    </Link>
+                  ))}
+                  <button type="button" tabIndex={mobileOpen ? 0 : -1} onClick={() => void signOutToHome()}>
+                    Sign out
+                  </button>
+                </div>
+              </li>
+            ) : (
             <li key={item.label} className={mobileSection === item.label ? "is-open" : ""}>
               {item.type === "link" ? (
                 <Link href={item.href} className="mobile-menu__top" tabIndex={mobileOpen ? 0 : -1}>
@@ -394,7 +432,8 @@ export default function Header() {
                 </>
               )}
             </li>
-          ))}
+            )
+          )}
         </ul>
         <div className="mobile-menu__foot">
           <div className="mobile-menu__langs">

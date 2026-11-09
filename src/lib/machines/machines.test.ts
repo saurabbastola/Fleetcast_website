@@ -9,6 +9,8 @@ import { loginEmail, loginReducer, type LoginEvent, type LoginState } from "./lo
 import { overlayKey, overlayNone, overlayReducer, type Overlay, type OverlayEvent } from "./overlay.ts";
 import { playbookReducer, playbookWaiting, type PlaybookEvent, type PlaybookState } from "./playbook.ts";
 import { submitIdle, submitReducer, type SubmitEvent, type SubmitState } from "./submit.ts";
+import { initialsOf, sessionLoading, sessionReducer, toAccount } from "./session.ts";
+import { signupForm, signupReducer, type SignupEvent, type SignupState } from "./signup.ts";
 import { videoIdle, videoReducer, type VideoEvent } from "./video.ts";
 
 const run = <S, E>(reducer: (s: S, e: E) => S, s: S, ...events: E[]) => events.reduce(reducer, s);
@@ -103,6 +105,72 @@ describe("login", () => {
   it("a reset notice replaces any error", () => {
     const s = go(loginEmail, { type: "EMAIL_OK" }, { type: "FAIL", message: "x" }, { type: "SEND_RESET" }, { type: "RESET_SENT", notice: "sent" });
     assert.deepEqual(s, { step: "password", busy: null, error: null, notice: "sent" });
+  });
+});
+
+describe("login with Google", () => {
+  it("leaves for Google, and a failure returns to the email step with the reason", () => {
+    const s = run(loginReducer, loginEmail, { type: "GOOGLE" } as LoginEvent);
+    assert.deepEqual(s, { step: "redirecting" });
+    assert.deepEqual(run(loginReducer, s, { type: "FAIL", message: "x" } as LoginEvent), { step: "email", error: "x" });
+  });
+});
+
+describe("signup", () => {
+  const go = (...e: SignupEvent[]) => run<SignupState, SignupEvent>(signupReducer, signupForm, ...e);
+
+  it("email sign-up goes form → verify → done", () => {
+    const s = go({ type: "CREATE" }, { type: "NEEDS_VERIFY", email: "a@b.co" }, { type: "VERIFY" }, { type: "VERIFIED", email: "a@b.co" });
+    assert.deepEqual(s, { step: "done", email: "a@b.co" });
+  });
+  it("projects that auto-confirm skip the code step", () => {
+    assert.deepEqual(go({ type: "CREATE" }, { type: "VERIFIED", email: "a@b.co" }), { step: "done", email: "a@b.co" });
+  });
+  it("a wrong code keeps the visitor on the verify step", () => {
+    const s = go({ type: "CREATE" }, { type: "NEEDS_VERIFY", email: "a@b.co" }, { type: "VERIFY" }, { type: "FAIL", message: "bad" });
+    assert.equal(s.step, "verify");
+    assert.equal(s.step === "verify" && s.error, "bad");
+  });
+  it("can't verify without submitting first, or double-submit", () => {
+    assert.deepEqual(go({ type: "VERIFIED", email: "a@b.co" }), signupForm);
+    const busy = go({ type: "CREATE" });
+    assert.equal(run(signupReducer, busy, { type: "GOOGLE" }), busy);
+  });
+  it("resend shows a notice and BACK returns to the form", () => {
+    const v = go({ type: "CREATE" }, { type: "NEEDS_VERIFY", email: "a@b.co" }, { type: "RESEND" }, { type: "RESENT", notice: "sent" });
+    assert.equal(v.step === "verify" && v.notice, "sent");
+    assert.deepEqual(run(signupReducer, v, { type: "BACK" }), signupForm);
+  });
+});
+
+describe("session", () => {
+  const user = { id: "u1", email: "sam.lee@x.co", user_metadata: { full_name: "Sam Lee" }, app_metadata: { provider: "google" } };
+
+  it("loading resolves to signedIn or signedOut", () => {
+    const a = toAccount(user);
+    assert.equal(sessionReducer(sessionLoading, { type: "RESOLVED", account: a }).status, "signedIn");
+    assert.equal(sessionReducer(sessionLoading, { type: "RESOLVED", account: null }).status, "signedOut");
+  });
+  it("a token refresh with the same user keeps the same state object", () => {
+    const s = sessionReducer(sessionLoading, { type: "RESOLVED", account: toAccount(user) });
+    assert.equal(sessionReducer(s, { type: "RESOLVED", account: toAccount(user) }), s);
+  });
+  it("builds a display account from Supabase user data", () => {
+    const a = toAccount(user)!;
+    assert.deepEqual([a.name, a.initials, a.provider], ["Sam Lee", "SL", "google"]);
+    assert.equal(toAccount({ id: "u2", email: "ops@fleet.io" })!.name, "ops");
+  });
+  it("remembers a deliberate sign-out, even when Supabase confirms it afterwards", () => {
+    const signedIn = sessionReducer(sessionLoading, { type: "RESOLVED", account: toAccount(user) });
+    const out = sessionReducer(signedIn, { type: "RESOLVED", account: null, byUser: true });
+    assert.deepEqual(out, { status: "signedOut", byUser: true });
+    assert.equal(sessionReducer(out, { type: "RESOLVED", account: null }), out);
+    assert.deepEqual(sessionReducer(sessionLoading, { type: "RESOLVED", account: null }), { status: "signedOut", byUser: false });
+  });
+  it("initials handle odd names", () => {
+    assert.equal(initialsOf("  ana  "), "A");
+    assert.equal(initialsOf("José  María Núñez"), "JN");
+    assert.equal(initialsOf("!!"), "?");
   });
 });
 

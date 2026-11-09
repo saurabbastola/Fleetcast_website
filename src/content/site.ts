@@ -108,6 +108,7 @@ export const nav: NavItem[] = [
       { label: "Advertiser Login", href: "/login?portal=ads" },
       { label: "Fleet Owner Portal", href: "/login?portal=fleet" },
       { label: "Developer Portal", href: "/login?portal=developer" },
+      { label: "Create an account", href: "/signup" },
     ],
   },
 ];
@@ -503,6 +504,7 @@ export const footer = {
       { label: "Advertiser Login", href: "/login?portal=ads" },
       { label: "Fleet Owner Login", href: "/login?portal=fleet" },
       { label: "Developer Portal", href: "/login?portal=developer" },
+      { label: "Create an account", href: "/signup" },
     ],
   ],
   legal: [

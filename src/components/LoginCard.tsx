@@ -1,54 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useReducer, useRef, useState, type FormEvent } from "react";
+import { EMAIL, Field, GoogleButton, OrDivider, authErrorMessage, startGoogle } from "@/components/auth/AuthUi";
 import { Mark } from "@/components/Logo";
 import { loginEmail, loginReducer, type LoginState } from "@/lib/machines/login";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase";
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 // Same on server and client (env vars are inlined), so no hydration mismatch.
 const initialLogin: LoginState = isSupabaseConfigured ? { step: "checking" } : loginEmail;
 
-function Field({
-  label,
-  type = "text",
-  value,
-  onChange,
-  autoComplete,
-  inputRef,
-  trailing,
-  invalid,
-}: {
-  label: string;
-  type?: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete?: string;
-  inputRef?: RefObject<HTMLInputElement | null>;
-  trailing?: ReactNode;
-  invalid?: boolean;
-}) {
-  return (
-    <label className={`ofield${value ? " has-value" : ""}${invalid ? " is-invalid" : ""}`}>
-      <input
-        ref={inputRef}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        required
-        placeholder=" "
-      />
-      <span className="ofield__label">{label}</span>
-      {trailing}
-    </label>
-  );
-}
-
-/** Two-step login. State machine: lib/machines/login.ts (exposed as `data-step`). */
-export default function LoginCard({ portal }: { portal: string }) {
+/**
+ * Two-step login plus "Continue with Google".
+ * State machine: lib/machines/login.ts (exposed as `data-step`).
+ */
+export default function LoginCard({ portal, portalKey }: { portal: string; portalKey?: string }) {
   const supabase = getBrowserSupabase();
   const [state, dispatch] = useReducer(loginReducer, initialLogin);
   const [email, setEmail] = useState("");
@@ -56,7 +23,9 @@ export default function LoginCard({ portal }: { portal: string }) {
   const [show, setShow] = useState(false);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passRef = useRef<HTMLInputElement | null>(null);
-  const after = process.env.NEXT_PUBLIC_AFTER_LOGIN_URL || "/";
+  const router = useRouter();
+  const after = process.env.NEXT_PUBLIC_AFTER_LOGIN_URL || "/dashboard";
+  const qs = portalKey ? `?portal=${encodeURIComponent(portalKey)}` : "";
   const { step } = state;
   const busy = state.step === "password" ? state.busy : null;
   const error = state.step === "email" || state.step === "password" ? state.error : null;
@@ -99,7 +68,16 @@ export default function LoginCard({ portal }: { portal: string }) {
     }
     dispatch({ type: "SIGN_IN" });
     const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    dispatch(err ? { type: "FAIL", message: "Wrong email or password." } : { type: "SIGNED_IN", email: email.trim() });
+    if (err) return dispatch({ type: "FAIL", message: authErrorMessage(err, "Signing in") });
+    dispatch({ type: "SIGNED_IN", email: email.trim() });
+    router.replace(after);
+  };
+
+  const google = async () => {
+    if (!supabase) return dispatch({ type: "FAIL", message: "Google sign-in needs Supabase to be connected." });
+    dispatch({ type: "GOOGLE" });
+    const failed = await startGoogle(supabase, "/dashboard");
+    if (failed) dispatch({ type: "FAIL", message: failed });
   };
 
   const forgot = async () => {
@@ -109,7 +87,9 @@ export default function LoginCard({ portal }: { portal: string }) {
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/login`,
     });
-    dispatch(err ? { type: "FAIL", message: err.message } : { type: "RESET_SENT", notice: `We sent a reset link to ${email.trim()}.` });
+    dispatch(
+      err ? { type: "FAIL", message: authErrorMessage(err, "Sending the reset link") } : { type: "RESET_SENT", notice: `We sent a reset link to ${email.trim()}.` }
+    );
   };
 
   const signOut = async () => {
@@ -119,15 +99,15 @@ export default function LoginCard({ portal }: { portal: string }) {
   };
 
   return (
-    <div className="login-card" data-step={step} aria-busy={step === "checking" || !!busy}>
+    <div className="login-card" data-step={step} aria-busy={step === "checking" || step === "redirecting" || !!busy}>
       <div className="login-card__logo" aria-label="Fleetcast" role="img">
         <Mark className="login-card__mark" />
         <span>fleetcast</span>
       </div>
 
-      {state.step === "checking" ? (
+      {state.step === "checking" || state.step === "redirecting" ? (
         <p className="login-card__sub login-card__checking" role="status">
-          Checking your session…
+          {state.step === "checking" ? "Checking your session…" : "Taking you to Google…"}
         </p>
       ) : state.step === "signedIn" ? (
         <>
@@ -146,6 +126,9 @@ export default function LoginCard({ portal }: { portal: string }) {
         <form onSubmit={next} noValidate>
           <h1 className="login-card__title">Welcome</h1>
           <p className="login-card__sub">Log in to Fleetcast to continue to the {portal}.</p>
+
+          <GoogleButton onClick={google} disabled={!!busy} />
+          <OrDivider />
 
           {step === "email" ? (
             <Field
@@ -209,6 +192,10 @@ export default function LoginCard({ portal }: { portal: string }) {
           <button type="submit" className="login-btn" disabled={!!busy}>
             {busy === "sign-in" ? "Signing in…" : "Continue"}
           </button>
+
+          <p className="auth-switch">
+            New to Fleetcast? <Link href={`/signup${qs}`}>Create an account</Link>
+          </p>
 
           {!isSupabaseConfigured && <p className="login-card__dev">Dev mode: connect Supabase to enable sign-in.</p>}
         </form>

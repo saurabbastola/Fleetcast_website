@@ -8,6 +8,7 @@
  *      └───────────SESSION_FOUND(email)────────┼──────────────────────────────────► signedIn
  *                                              │      SEND_RESET ─► password{busy:"reset"} ─► RESET_SENT / FAIL
  *                         signedIn ──SIGNED_OUT──► email
+ *   email / password ──GOOGLE──► redirecting (page leaves for Google; FAIL returns to email)
  *
  * `checking` exists so a returning visitor doesn't see the email form flash
  * before "You're signed in". Field values (email, password) stay as plain
@@ -17,6 +18,7 @@
 export type LoginState =
   | { step: "checking" }
   | { step: "email"; error: string | null }
+  | { step: "redirecting" }
   | { step: "password"; busy: "sign-in" | "reset" | null; error: string | null; notice: string | null }
   | { step: "signedIn"; email: string };
 
@@ -30,7 +32,8 @@ export type LoginEvent =
   | { type: "SEND_RESET" }
   | { type: "RESET_SENT"; notice: string }
   | { type: "FAIL"; message: string }
-  | { type: "SIGNED_OUT" };
+  | { type: "SIGNED_OUT" }
+  | { type: "GOOGLE" };
 
 export const loginEmail: LoginState = { step: "email", error: null };
 const passwordIdle: LoginState = { step: "password", busy: null, error: null, notice: null };
@@ -53,7 +56,11 @@ export function loginReducer(s: LoginState, e: LoginEvent): LoginState {
       return s.step === "password" ? { step: "signedIn", email: e.email } : s;
     case "RESET_SENT":
       return s.step === "password" ? { ...s, busy: null, notice: e.notice } : s;
+    case "GOOGLE":
+      if (s.step === "email" || (s.step === "password" && !s.busy)) return { step: "redirecting" };
+      return s;
     case "FAIL":
+      if (s.step === "redirecting") return { step: "email", error: e.message };
       if (s.step === "email") return { ...s, error: e.message };
       if (s.step === "password") return { ...s, busy: null, error: e.message, notice: null };
       return s;

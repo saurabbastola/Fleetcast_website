@@ -19,6 +19,8 @@ Then open http://localhost:3000.
 | Home | `/` |
 | Contact form | `/contact` |
 | Login (Supabase auth) | `/login` (also `/login?portal=fleet`, `/login?portal=developer`) |
+| Create an account | `/signup` (same `?portal=` options) |
+| Dashboard (signed in) | `/dashboard`, `/dashboard/settings` |
 | Placeholder pages for every menu/footer link | e.g. `/solutions/marketers` |
 
 ## What's interactive
@@ -38,6 +40,16 @@ Then open http://localhost:3000.
 - **Case studies**: cards lift on hover.
 - **Playbook pop‑up**: slides in after about 1.4s on desktop, or after scrolling past the hero on phones. Closing it hides it for 7 days. "Get it now" opens an email form that posts to `/api/leads`; once someone signs up, the pop-up doesn't come back.
 
+## Signed-in experience
+
+Sign-in state comes from the real Supabase session, not a separate flag: `AuthProvider` (in `app/layout.tsx`) feeds `lib/machines/session.ts`, and any component reads it with `useAuth()` → `{ isLoggedIn, account, signOut }`. `<html data-auth="loading|signedIn|signedOut">` mirrors it.
+
+- **Signed out:** the public landing page (`components/home/LandingPage.tsx`).
+- **Signed in:** opening `/` goes to `/dashboard` (`HomeGate`). On marketing pages the header's *Login* menu becomes the account menu: avatar, name, Dashboard, Settings, Sign out (`components/account/AccountMenu.tsx`).
+- **Dashboard** (`/dashboard`, `components/dashboard/`): sidebar, account bar, "Welcome back, <name>", metric cards, campaigns, fleet mix and top streets. All numbers are **sample data** from `content/dashboard.ts` and the page says so. Signed-out visitors are sent to `/login`.
+- **Settings** (`/dashboard/settings`): saves the name to the Supabase user and to `profiles`.
+- **Sign out** returns to the landing page.
+
 ## State machines
 
 Every interactive piece runs on a small, pure reducer in `src/lib/machines/` (no React, no DOM), with an ASCII diagram at the top of each file:
@@ -47,7 +59,9 @@ Every interactive piece runs on a small, pure reducer in `src/lib/machines/` (no
 | `overlay.ts` | Header | `none` · `menu(id)` · `lang` · `search` · `mobile(section)`, so only one can be open at a time |
 | `cycle.ts` | Stages, Wraps + QR, Testimonials, Marketplace (through `lib/useAutoCycle.ts`) | `playing` · `paused` (with reasons: hover, focus, offscreen, hidden-tab, reduced-motion) · `stopped` |
 | `submit.ts` | Contact form, playbook form (through `lib/useSubmit.ts`) | `idle` · `submitting` · `success` · `error` |
-| `login.ts` | `/login` | `checking` · `email` · `password` (busy: sign-in or reset) · `signedIn` |
+| `login.ts` | `/login` | `checking` · `email` · `password` (busy: sign-in or reset) · `redirecting` (to Google) · `signedIn` |
+| `session.ts` | Whole app, via `lib/auth.tsx` → `useAuth()` | `loading` · `signedIn(account)` · `signedOut(byUser)`, which is the real "isLoggedIn" |
+| `signup.ts` | `/signup` | `form` (busy: create or google) · `verify` (6-digit code) · `done` |
 | `video.ts` | Creative Studio player | `idle` · `playing` · `paused` · `ended`, plus who started playback |
 | `playbook.ts` | Playbook pop-up | `waiting` · `visible` · `form` · `dismissed` |
 
@@ -93,14 +107,29 @@ Nearly everything is in **`src/content/site.ts`**: nav menus, headlines, cards, 
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...   # or the publishable key
    ```
 4. Restart `npm run dev`. The contact form and the playbook form will now save rows to Supabase. Until you connect it, submissions are only logged in the terminal.
-5. **Login:** create users under **Authentication → Users**. `/login` uses email and password (`signInWithPassword`) and has a "Forgot password?" reset link.
+5. **Accounts.** In **SQL Editor**, also run `supabase/profiles.sql`. It adds a `profiles` table that fills itself whenever someone signs up (name, email, `email` or `google`, portal), readable only by that user.
+
+### Sign-up and sign-in
+
+`/signup` offers **Continue with Google** and **email + password**; `/login` offers Google and email + password, with a "Forgot password?" link.
+
+**Google (recommended, no emails needed):**
+1. In [Google Cloud Console](https://console.cloud.google.com) → *APIs & Services* → *Credentials*, create an **OAuth client ID** (type *Web application*).
+2. Under *Authorized redirect URIs*, add `https://<your-project-ref>.supabase.co/auth/v1/callback`.
+3. In Supabase → **Authentication → Sign In / Providers → Google**, switch it on and paste the client ID and secret.
+
+**Email sign-up with a 6-digit code:**
+1. Supabase → **Authentication → Emails → Confirm signup**: make sure the template contains `{{ .Token }}` (the code). Keep `{{ .ConfirmationURL }}` too if you want the link to work as well.
+2. **Important:** Supabase's built-in email sender only delivers to members of your Supabase team, a few per hour. For real visitors, connect your own SMTP (e.g. Resend, Postmark, SendGrid) under **Authentication → Emails → SMTP Settings**. Until then, use Google, or add users by hand under **Authentication → Users → Add user** with *Auto Confirm User* ticked.
+
+**Redirect URLs:** in **Authentication → URL Configuration**, set *Site URL* to your live domain and add `http://localhost:3000/**` and `https://<your-vercel-domain>/**` to *Redirect URLs*. Google and email links send people back to `/login`, which signs them in.
 
 ## Deploy to Vercel
 
 1. Push this folder to a GitHub repo.
 2. In Vercel, choose **Add New → Project** and import the repo. The framework is detected as Next.js.
 3. Add the same environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and optionally `NEXT_PUBLIC_AFTER_LOGIN_URL`).
-4. Deploy. In Supabase → Authentication → URL Configuration, add your Vercel domain so password‑reset links work.
+4. Deploy. In Supabase → Authentication → URL Configuration, set the *Site URL* to your Vercel domain and add `https://<your-vercel-domain>/**` to *Redirect URLs*, so Google sign-in, email codes/links and password resets come back to the live site.
 
 ## Project structure
 

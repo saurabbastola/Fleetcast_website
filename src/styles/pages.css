@@ -460,3 +460,67 @@
   opacity: 0.55;
   cursor: progress;
 }
+
+/* Auth extras shared by /login and /signup */
+.auth-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 22px;
+  padding: 10px 16px;
+  border: 1.5px solid #c9cdd6;
+  border-radius: 8px;
+  background: var(--white);
+  color: #1e212a;
+  font-weight: 600;
+  font-size: 15px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.auth-google:hover:not(:disabled) {
+  background: #f5f6f8;
+  border-color: #9aa1ad;
+}
+.auth-google:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 4px;
+  color: #6b7180;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.auth-or::before,
+.auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e1e4ea;
+}
+.auth-switch,
+.auth-fine {
+  margin-top: 18px;
+  font-size: 14px;
+  color: #4a4f5c;
+}
+.auth-fine {
+  margin-top: 8px;
+}
+.auth-switch a,
+.auth-fine a {
+  color: var(--login-blue);
+  font-weight: 600;
+}
+.auth-switch a:hover,
+.auth-fine a:hover {
+  text-decoration: underline;
+}

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Hanken_Grotesk, Instrument_Sans } from "next/font/google";
 import { site } from "@/content/site";
+import { AuthProvider } from "@/lib/auth";
 import "@/styles/base.css";
 import "@/styles/header.css";
 import "@/styles/hero.css";
@@ -8,6 +9,7 @@ import "@/styles/home.css";
 import "@/styles/moving.css";
 import "@/styles/components.css";
 import "@/styles/pages.css";
+import "@/styles/dashboard.css";
 
 const display = Hanken_Grotesk({ subsets: ["latin"], variable: "--nf-display", display: "swap" });
 const sans = Instrument_Sans({ subsets: ["latin"], variable: "--nf-sans", display: "swap" });
@@ -35,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <noscript>
           <style>{`.reveal{opacity:1!important;transform:none!important}`}</style>
         </noscript>
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

@@ -1,37 +1,15 @@
-import Attention from "@/components/home/Attention";
-import CaseStudies from "@/components/home/CaseStudies";
-import ContactCta from "@/components/home/ContactCta";
-import Formats from "@/components/home/Formats";
-import GlobalReach from "@/components/home/GlobalReach";
-import Goal from "@/components/home/Goal";
-import Hero from "@/components/home/Hero";
-import Marketplace from "@/components/home/Marketplace";
-import Stages from "@/components/home/Stages";
-import Studio from "@/components/home/Studio";
-import Testimonials from "@/components/home/Testimonials";
-import TrustedBy from "@/components/home/TrustedBy";
-import WrapsQr from "@/components/home/WrapsQr";
+import HomeGate from "@/components/home/HomeGate";
+import LandingPage from "@/components/home/LandingPage";
 
+/**
+ * Home. Signed-out visitors see the marketing landing page; signed-in visitors
+ * are sent to their dashboard (HomeGate). The landing page is still server-rendered
+ * for everyone, so search engines and first paint are unaffected.
+ */
 export default function HomePage() {
   return (
-    <>
-      <Hero />
-      <div className="mint-block">
-        <Goal />
-        <Attention />
-        <Marketplace />
-      </div>
-      <Formats />
-      <Stages />
-      <WrapsQr />
-      <Studio />
-      <GlobalReach />
-      <section className="proof" id="testimonials" aria-label="Testimonials and brands">
-        <Testimonials />
-        <TrustedBy />
-      </section>
-      <CaseStudies />
-      <ContactCta />
-    </>
+    <HomeGate>
+      <LandingPage />
+    </HomeGate>
   );
 }
