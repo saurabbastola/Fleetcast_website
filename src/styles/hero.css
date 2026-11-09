@@ -1,0 +1,260 @@
+/* ==========================================================================
+   Home hero — every rule is scoped to .hero so it can't affect other sections.
+   Dark "night drive" palette: deep navy, orange glow, photo collage.
+   ========================================================================== */
+
+.hero {
+  --hero-bg: #000c22;
+  --hero-ink: var(--mint);
+  --hero-muted: rgba(241, 253, 230, 0.72);
+  --hero-line: rgba(241, 253, 230, 0.14);
+  --hero-radius: clamp(20px, 2vw, 32px);
+
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--hero-bg);
+  color: var(--hero-ink);
+}
+
+/* Ambient light: an orange glow behind the collage and a faint dot grid. */
+.hero::before,
+.hero::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.hero::before {
+  inset: -20% -10% auto 35%;
+  height: 120%;
+  background:
+    radial-gradient(closest-side, rgba(222, 73, 3, 0.42), transparent 70%) 60% 40% / 70% 70% no-repeat,
+    radial-gradient(closest-side, rgba(1, 68, 180, 0.35), transparent 70%) 10% 90% / 60% 60% no-repeat;
+  filter: blur(20px);
+}
+.hero::after {
+  inset: 0;
+  background-image: radial-gradient(rgba(241, 253, 230, 0.09) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+}
+
+.hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(32px, 5vw, 96px);
+  max-width: 1440px;
+  min-height: min(100svh, 960px);
+  margin: 0 auto;
+  padding: calc(var(--header-h) + clamp(24px, 4vw, 64px)) var(--gutter) clamp(56px, 6vw, 96px);
+}
+
+/* ------------------------------------------------------------------ Copy --- */
+.hero__title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(46px, 6.2vw, 104px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+.hero__accent {
+  font-style: normal;
+  background: linear-gradient(100deg, #ff7a2e 0%, var(--orange) 55%, #ffb36b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero__text {
+  max-width: 30em;
+  margin-top: clamp(22px, 2.4vw, 36px);
+  color: var(--hero-muted);
+  font-family: var(--font-display);
+  font-size: clamp(17px, 1.3vw, 21px);
+  line-height: 1.5;
+}
+.hero__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: clamp(28px, 3vw, 44px);
+}
+.hero__cta {
+  min-width: 0;
+  box-shadow: 0 10px 30px rgba(222, 73, 3, 0.35);
+}
+.hero__cta svg {
+  transition: transform 0.2s var(--ease-out);
+}
+.hero__cta:hover svg {
+  transform: translateX(3px);
+}
+.hero__ghost {
+  min-height: 52px;
+  color: var(--hero-ink);
+  border: 1.5px solid rgba(241, 253, 230, 0.32);
+  background: rgba(241, 253, 230, 0.04);
+  backdrop-filter: blur(6px);
+}
+.hero__ghost:hover {
+  border-color: var(--hero-ink);
+  background: rgba(241, 253, 230, 0.1);
+}
+
+/* --------------------------------------------------------------- Collage --- */
+.hero__visual {
+  position: relative;
+  aspect-ratio: 1.22 / 1;
+  max-height: 72svh;
+  justify-self: stretch;
+}
+.hero__shot {
+  position: absolute;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--hero-radius);
+  background: #0b1a36;
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(241, 253, 230, 0.08);
+}
+.hero__shot img {
+  object-fit: cover;
+  object-position: 50% 62%;
+}
+.hero__shot--main {
+  inset: 0 0 24% 6%;
+  animation: heroUnveil 1.2s var(--ease-out) 0.1s both;
+}
+/* A soft vignette keeps the main photo from fighting with the headline. */
+.hero__shot--main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(200deg, transparent 50%, rgba(0, 12, 34, 0.55));
+}
+.hero__shot--side {
+  left: 0;
+  bottom: 0;
+  width: 46%;
+  aspect-ratio: 16 / 10;
+  border: 6px solid var(--hero-bg);
+  border-radius: calc(var(--hero-radius) + 6px);
+  animation: heroRise 1s var(--ease-out) 0.45s both;
+}
+.hero__shot--card {
+  right: -4%;
+  bottom: 4%;
+  width: 42%;
+  aspect-ratio: 3 / 2;
+  border-radius: 18px;
+  transform: rotate(-3deg);
+  animation:
+    heroCardIn 1s var(--ease-spring) 0.7s both,
+    heroFloat 6s ease-in-out 1.8s infinite alternate;
+}
+
+@keyframes heroUnveil {
+  from {
+    clip-path: inset(0 0 0 100% round var(--hero-radius));
+    transform: scale(1.04);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round var(--hero-radius));
+    transform: none;
+  }
+}
+@keyframes heroRise {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+@keyframes heroCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px) rotate(4deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+}
+@keyframes heroFloat {
+  from {
+    transform: rotate(-3deg) translateY(0);
+  }
+  to {
+    transform: rotate(-2deg) translateY(-10px);
+  }
+}
+
+/* ------------------------------------------------------------- Statement --- */
+.hero__statement {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  align-items: end;
+  gap: clamp(24px, 6vw, 120px);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(48px, 6vw, 96px) var(--gutter) clamp(64px, 7vw, 112px);
+  border-top: 1px solid var(--hero-line);
+}
+.hero__statement-title {
+  max-width: 13em;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-h2);
+  line-height: 1.04;
+  letter-spacing: var(--tracking-tight);
+}
+.hero__intro {
+  max-width: 28em;
+  color: var(--hero-muted);
+  font-family: var(--font-display);
+  font-size: var(--fs-lead);
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------ Responsive --- */
+@media (max-width: 900px) {
+  .hero__inner {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding-bottom: 48px;
+  }
+  .hero__visual {
+    aspect-ratio: 4 / 3.3;
+    max-height: none;
+  }
+  .hero__shot--main {
+    inset: 0 0 20% 0;
+  }
+  .hero__shot--side {
+    width: 56%;
+  }
+  .hero__shot--card {
+    right: 0;
+    width: 48%;
+  }
+  .hero__statement {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero__ctas .btn {
+    flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__shot {
+    animation: none !important;
+  }
+  .hero__shot--card {
+    transform: rotate(-3deg);
+  }
+}
