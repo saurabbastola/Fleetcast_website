@@ -104,7 +104,9 @@ Create-only initial migrations were generated for the new Django app tables and 
 
 The public inventory does not include the `auth` or `storage` schemas. The new read-only `inspect_supabase` management command reports Auth/Storage column metadata, aggregate Auth user/provider counts, bucket metadata, and public RLS policy metadata without emitting user rows. Run it from a network that can reach Supabase before account migration or deployment cutover.
 
-The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 Supabase Auth users and provider identity counts of 1 `email` and 3 `google` identities (provider counts are identity rows, not distinct users). It found no Storage buckets. The existing `public.profiles` foreign key to `auth.users` and its own-row SELECT/UPDATE policies remain relevant to any account transition; the lead tables have public INSERT policies. The additive Django migrations created new application/framework tables only; no Auth users, profiles, lead rows, RLS policies, or existing tables were modified. Before importing users, inspect account-to-identity/profile mappings through a controlled staging procedure; the aggregate report does not establish which identities belong to which profiles.
+The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 confirmed Supabase Auth users, all 3 with distinct Google identities, and 1 of those accounts also has an email identity. Two `public.profiles` rows link to Auth users, both with NULL `portal`; the third Auth user has no profile row. The existing `public.profiles` foreign key to `auth.users` and own-row SELECT/UPDATE policies remain relevant; the lead tables have public INSERT policies. The additive Django migrations created new application/framework tables only; no Auth users, profiles, lead rows, RLS policies, or existing tables were modified. A verified Google subject bridge now imports legacy accounts just in time, asks the user to select Business or Driver, and records the legacy UUID. That code is not deployed until the Render service is updated.
+
+The Storage buckets `advertisements` and `documents` were created as private buckets with 10 MB limits and MIME restrictions matching the Django upload validator. No client RLS policies were added; Django uses its server-only service-role key for object writes and signed reads. The `store_upload` content-type bug was fixed and covered by a backend test, but the fix is not live until Render is redeployed.
 
 ### Deployment status
 
@@ -112,9 +114,11 @@ The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It r
 - Additive Django migrations have been applied to the existing Supabase database; `showmigrations` confirms all applied and `manage.py check` passes.
 - Vercel Production is deployed at `https://fleetcast-website-pjcr.vercel.app` with Django API environment configuration. The production `/api/v1/health/` proxy returns HTTP 200 from Gunicorn.
 - Frontend typecheck and 33 tests pass; production build passes when Google Fonts can be fetched. Django tests previously passed (11) against isolated SQLite.
-- Account import/linking, Storage bucket setup/policy review, Google OAuth live sign-in, and authenticated CRUD workflows remain outstanding.
+- The live Google OAuth client ID is not listed in the connected Google Cloud project; production callback URI is missing on the existing `Local_web Fleetcast` client. Render credentials and Google callback need updating, then Google login must be tested.
+- Render needs redeployment for the storage content-type fix and verified legacy-account bridge. Authenticated upload/CRUD workflows remain to be tested.
 
 ## Remaining manual setup
 
-- Add the production Vercel callback URI to the Google Web OAuth client and resolve the reported `401 invalid_client` before claiming Google sign-in works.
-- Existing Supabase Auth users and `public.profiles` remain untouched; account migration and password resets still require a separate plan/rehearsal. No Storage buckets exist yet; create suitable buckets and access policies only after confirming the intended public/private behavior.
+- Update the Render Google client ID/secret using the existing Web OAuth client, add the exact production callback URI, deploy the service, and complete a real sign-in.
+- Existing Supabase Auth users and `public.profiles` remain untouched until each account completes the verified Google transition. If email/password access is needed, use Django password reset after import; configure SMTP first.
+- Redeploy the backend code and test an authenticated upload. The buckets are private and service-role-only by design.

@@ -11,7 +11,13 @@ This is a non-destructive migration plan. No Supabase Auth users, identities, pr
 
 ### Current inventory (read-only, 2026-11-15)
 
-The hosted project has 3 rows in `auth.users` and 4 provider identity rows: 1 `email` and 3 `google`. These are provider-identity counts, not distinct users per provider; the aggregate output does not show whether an account has multiple providers or how identities map to `public.profiles`. Do not infer import/link decisions from these totals. There are no existing Storage buckets. The public `profiles` table is linked to `auth.users` and has own-row SELECT/UPDATE RLS policies; existing Auth users and profile rows were not modified.
+The hosted project has 3 rows in `auth.users`, all 3 email-confirmed. All 3 have distinct Google identities, and 1 also has an email identity. Two `public.profiles` rows link to Auth users, but both have a NULL `portal`; the third Auth user has no profile row. Therefore no role can safely be inferred from the old profile data. There were no pre-existing Storage buckets. The public `profiles` table is linked to `auth.users` and has own-row SELECT/UPDATE RLS policies; existing Auth users and profile rows were not modified.
+
+### Safe Google account transition
+
+The Django Google callback now has a just-in-time transition for legacy accounts. After Google verifies the ID token and email, Django matches the exact Google `sub` to `auth.identities.provider_id`, then requires the linked Supabase account to be confirmed, active, and have the same email. The user must select Business or Driver in the existing role-selection flow; ADMIN is never an option. Django records the legacy UUID in `legacy_supabase_user_id`, links the verified subject, and creates the matching role profile in its own tables. It never imports or copies the Supabase password hash, and it leaves Supabase Auth/profile rows intact.
+
+Because the deployed Google client currently fails with `invalid_client`, this transition has not run for any user. Once Google is correctly configured and the updated Django service is deployed, each of these users can sign in with their already-linked Google identity and select the correct role. If a user lacks a matching verified Google identity, do not create a duplicate based on email alone; handle that account separately with an operator-reviewed role and a Django password reset. Existing email credentials are not portable; the one legacy email identity also belongs to a Google-linked account, and reset remains available after import if Django SMTP is configured.
 
 ## Passwords and verification
 

@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+from datetime import datetime, timezone
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.core import signing
@@ -9,6 +12,46 @@ from .models import User
 from apps.businesses.models import BusinessProfile
 from apps.drivers.models import DriverProfile
 from apps.campaigns.models import Campaign
+
+
+class LegacyGoogleIdentityTests(SimpleTestCase):
+    @override_settings(DATABASE_URL="postgresql://example.invalid/database")
+    @patch("apps.accounts.views.connection")
+    def test_legacy_account_requires_exact_confirmed_google_identity_and_email(self, connection):
+        from .views import find_legacy_google_user
+
+        legacy_id = uuid4()
+        connection.vendor = "postgresql"
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.return_value = (legacy_id, "verified@example.com", datetime.now(timezone.utc), None)
+
+        result = find_legacy_google_user("google-subject", "verified@example.com")
+
+        self.assertEqual(result, (legacy_id, True))
+        query, params = cursor.execute.call_args.args
+        self.assertIn("i.provider_id = %s", query)
+        self.assertEqual(params, ["google-subject"])
+
+    @override_settings(DATABASE_URL="postgresql://example.invalid/database")
+    @patch("apps.accounts.views.connection")
+    def test_email_only_supabase_account_requires_manual_linking(self, connection):
+        from .views import find_legacy_google_user
+
+        connection.vendor = "postgresql"
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [None, (1,)]
+
+        self.assertEqual(find_legacy_google_user("unlinked-google-subject", "legacy@example.com"), (None, True))
+
+    @patch("apps.accounts.views.connection")
+    def test_sqlite_never_tries_to_read_supabase_auth_schema(self, connection):
+        from .views import find_legacy_google_user
+
+        connection.vendor = "sqlite"
+        self.assertEqual(find_legacy_google_user("google-subject", "verified@example.com"), (None, False))
+        connection.cursor.assert_not_called()
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AuthenticationApiTests(APITestCase):

@@ -4,6 +4,7 @@ from authlib.integrations.requests_client import OAuth2Session
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.db import connection
 from django.core.mail import send_mail
 from django.core import signing
 from django.http import JsonResponse, HttpResponseRedirect
@@ -208,6 +209,35 @@ class AdminDashboardView(APIView):
 def google_client(state=None):
     return OAuth2Session(settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, scope="openid email profile", redirect_uri=settings.GOOGLE_REDIRECT_URI, state=state, code_challenge_method="S256")
 
+def find_legacy_google_user(subject, email):
+    """Return (legacy UUID, email already belongs to Supabase) without email-only linking."""
+    if connection.vendor != "postgresql":
+        return None, False
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT u.id, u.email, u.email_confirmed_at, u.deleted_at
+            FROM auth.identities AS i
+            JOIN auth.users AS u ON u.id = i.user_id
+            WHERE i.provider = 'google'
+              AND i.provider_id = %s
+            """,
+            [subject],
+        )
+        row = cursor.fetchone()
+        if row:
+            legacy_id, legacy_email, email_confirmed_at, deleted_at = row
+            matches = (legacy_email or "").lower() == email.lower()
+            if matches and email_confirmed_at and not deleted_at:
+                return legacy_id, True
+            return None, True
+
+        cursor.execute(
+            "SELECT 1 FROM auth.users WHERE LOWER(email) = LOWER(%s) AND deleted_at IS NULL LIMIT 1",
+            [email],
+        )
+        return None, bool(cursor.fetchone())
+
 class GoogleStartView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -257,15 +287,27 @@ class GoogleCallbackView(APIView):
                 return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback?linked=1"), RefreshToken.for_user(target))
             user = User.objects.filter(provider_subject=claims["sub"]).first()
             if user is None:
-                if User.objects.filter(email__iexact=claims["email"]).exists():
-                    return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
                 if role not in (User.Role.BUSINESS, User.Role.DRIVER): return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=role_required")
                 from apps.businesses.models import BusinessProfile
                 from apps.drivers.models import DriverProfile
+                legacy_user_id, legacy_email_exists = find_legacy_google_user(claims["sub"], claims["email"])
+                if legacy_email_exists and not legacy_user_id:
+                    return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
+                legacy_user = User.objects.filter(legacy_supabase_user_id=legacy_user_id).first() if legacy_user_id else None
+                if User.objects.filter(email__iexact=claims["email"]).exists() and not legacy_user:
+                    return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
                 with transaction.atomic():
-                    user = User.objects.create_user(email=claims["email"], password=None, first_name=claims.get("given_name", ""), last_name=claims.get("family_name", ""), role=role, auth_provider="google", provider_subject=claims["sub"], is_active=True, email_verified=True)
-                    if role == User.Role.BUSINESS: BusinessProfile.objects.create(user=user, company_name="")
-                    else: DriverProfile.objects.create(user=user)
+                    user = legacy_user
+                    if user:
+                        if user.email.lower() != claims["email"].lower() or (user.provider_subject and user.provider_subject != claims["sub"]):
+                            return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
+                        user.provider_subject = claims["sub"]
+                        user.email_verified = True
+                        user.save(update_fields=["provider_subject", "email_verified", "updated_at"])
+                    else:
+                        user = User.objects.create_user(email=claims["email"], password=None, first_name=claims.get("given_name", ""), last_name=claims.get("family_name", ""), role=role, auth_provider="google", provider_subject=claims["sub"], legacy_supabase_user_id=legacy_user_id, is_active=True, email_verified=True)
+                        if role == User.Role.BUSINESS: BusinessProfile.objects.create(user=user, company_name="")
+                        else: DriverProfile.objects.create(user=user)
             if not user.is_active: return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=inactive")
             if not user.email_verified: return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=unverified")
             return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback"), RefreshToken.for_user(user))

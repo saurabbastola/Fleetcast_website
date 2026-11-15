@@ -33,7 +33,7 @@ def store_upload(upload, bucket, private=False):
     safe_name = upload.name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].replace("..", "_")
     key = f"{uuid.uuid4().hex}-{safe_name}"
     endpoint = f"{settings.SUPABASE_URL}/storage/v1/object/{bucket}/{quote(key, safe='')}"
-    req = Request(endpoint, data=upload.read(), headers={"Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}", "apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": mime, "x-upsert": "false"}, method="POST")
+    req = Request(endpoint, data=upload.read(), headers={"Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}", "apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": claimed_mime, "x-upsert": "false"}, method="POST")
     try:
         with urlopen(req, timeout=30) as response:
             if response.status not in (200, 201): raise ValidationError("The file could not be stored.")

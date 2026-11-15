@@ -135,7 +135,7 @@ Email/password registration verifies the supplied address before activating the 
 
 For local testing without an SMTP provider, set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` in `backend/.env`. Verification and password-reset links will print in the Django terminal; use them only in local development. For production, configure SMTP and use Django's SMTP email backend.
 
-The backend sends password reset email using Django's configured email backend. Configure SMTP before using password reset outside development. The inventory found no existing Supabase Storage buckets. Create/configure suitable buckets and policies for `SUPABASE_ADS_BUCKET` and `SUPABASE_DOCUMENTS_BUCKET` before upload tests; keep the documents bucket private. The service-role key belongs only in Django's `.env`. Document storage access is returned through short-lived signed URLs.
+The backend sends password reset email using Django's configured email backend. Configure SMTP before using password reset outside development. Two private Supabase Storage buckets are now configured: `advertisements` (images only) and `documents` (PDF and images), each with a 10 MB cap. They have no client RLS policies; all object operations must go through Django using the private service-role key, and reads use short-lived signed URLs. Do not expose the key to the frontend.
 
 `supabase/schema.sql` documents the existing public lead/contact tables. Django maps those tables as unmanaged models and handles inserts through its API. `supabase/profiles.sql` is legacy Supabase Auth setup; do not use it to create new application accounts under the Django auth architecture.
 
@@ -148,7 +148,7 @@ The backend sends password reset email using Django's configured email backend. 
 
 The GitHub deployment branch is `codex/render-deployment`. The Render Blueprint does not apply migrations automatically. To deploy a future update, push the desired branch and deploy through Render/Vercel. Keep Google and Supabase credentials in private service environment settings, never in source control or `NEXT_PUBLIC_` variables.
 
-Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI. Google sign-in still requires resolving the reported `401 invalid_client` and completing a real login before it can be considered working.
+Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI. Production currently sends a client ID not found in the connected Google Cloud project; configure Render with the existing `Local_web Fleetcast` Web client ID and its matching secret, add the production callback, and redeploy Render. Google sign-in is not yet verified. The updated backend also needs a Render redeploy before the upload MIME fix and verified legacy-account transition are live.
 
 ## Project structure
 
