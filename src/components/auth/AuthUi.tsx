@@ -1,12 +1,11 @@
 "use client";
 
-import type { AuthError, SupabaseClient } from "@supabase/supabase-js";
 import type { ReactNode, RefObject } from "react";
 
 /** Shared pieces for the login and sign-up cards. */
 
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-export const MIN_PASSWORD = 8;
+export const MIN_PASSWORD = 10;
 
 export function Field({
   label,
@@ -73,57 +72,22 @@ export function OrDivider() {
   );
 }
 
-/**
- * Sends the visitor to Google. Supabase brings them back to `returnTo`, where
- * the browser client picks the session out of the URL automatically.
- * Resolves only on failure (on success the page navigates away).
- */
-export async function startGoogle(supabase: SupabaseClient, returnTo: string): Promise<string | null> {
-  // The redirect itself can't report "provider disabled" back to the page (the
-  // browser just lands on a raw JSON error), so check the project's settings first.
-  try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key ?? "" } });
-    const settings = (await res.json()) as { external?: { google?: boolean } };
-    if (res.ok && settings.external?.google === false) {
-      return "Google sign-in isn't switched on yet. Please use email for now.";
-    }
-  } catch {
-    /* settings unavailable: try the redirect anyway */
+/** Translate Django OAuth callback codes without exposing provider response details. */
+export function readAuthRedirectError(clear = false): string | null {
+  if (typeof window === "undefined") return null;
+  const query = new URLSearchParams(window.location.search);
+  const code = query.get("auth_error");
+  if (!code) return null;
+  if (clear) {
+    query.delete("auth_error");
+    const qs = query.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`);
   }
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${window.location.origin}${returnTo}`,
-      queryParams: { prompt: "select_account" },
-    },
-  });
-  if (!error) return null;
-  return error.message.toLowerCase().includes("provider is not enabled")
-    ? "Google sign-in isn't switched on yet. Enable it in Supabase → Authentication → Sign In / Providers."
-    : authErrorMessage(error, "Google sign-in");
+  const messages: Record<string, string> = { oauth_state: "Sign-in could not be verified. Please try again.", google_unverified: "Google did not return a verified email address.", account_link_required: "This email already has an account. Sign in with your password before linking Google.", link_email_mismatch: "The Google email must match the verified email on this Fleetcast account.", identity_already_linked: "That Google account is already linked to another Fleetcast account.", role_required: "Choose a Business or Driver account to continue.", inactive: "This account is inactive. Contact Fleetcast support.", unverified: "Verify your email before signing in.", google_failed: "Google sign-in could not be completed. Check the server configuration and try again." };
+  return messages[code] || "Sign-in could not be completed. Please try again.";
 }
 
-/** Human messages for Supabase auth errors. Never reveals whether an email exists. */
-export function authErrorMessage(err: AuthError, action = "That"): string {
-  if (err.status === 429 || err.code === "over_email_send_rate_limit" || err.code === "over_request_rate_limit") {
-    return "Too many attempts. Please wait a minute and try again.";
-  }
-  switch (err.code) {
-    case "email_not_confirmed":
-      return "Please confirm your email first. Enter the code we sent, or click the link in the email.";
-    case "invalid_credentials":
-      return "Wrong email or password.";
-    case "otp_expired":
-      return "That code has expired. Send a new one and try again.";
-    case "weak_password":
-      return `Please use a stronger password (at least ${MIN_PASSWORD} characters).`;
-    case "signup_disabled":
-      return "New sign-ups are switched off for this site.";
-    case "email_address_invalid":
-      return "Please enter a valid email address.";
-  }
-  if (err.status === 400 || err.status === 422) return err.message;
-  return `${action} didn't work. Please check your connection and try again.`;
+/** Only same-site paths, so `?next=` can't send people to another website. */
+export function safeNext(next: string | null | undefined, fallback = "/dashboard"): string {
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : fallback;
 }

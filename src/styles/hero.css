@@ -155,6 +155,19 @@
     heroCardIn 1s var(--ease-spring) 0.7s both,
     heroFloat 6s ease-in-out 1.8s infinite alternate;
 }
+.hero__sample-note {
+  position: absolute;
+  z-index: 2;
+  left: 10px;
+  bottom: 10px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: rgba(0, 27, 67, 0.88);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
 
 @keyframes heroUnveil {
   from {

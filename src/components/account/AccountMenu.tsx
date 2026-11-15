@@ -22,8 +22,8 @@ export function Avatar({ account, size = 34 }: { account: Account; size?: number
   );
 }
 
-export const ACCOUNT_LINKS = [
-  { label: "Dashboard", href: "/dashboard" },
+export const ACCOUNT_LINKS = (role: Account["role"]) => [
+  { label: "Dashboard", href: role === "ADMIN" ? "/dashboard/admin" : "/dashboard" },
   { label: "Settings", href: "/dashboard/settings" },
 ];
 
@@ -93,7 +93,7 @@ export default function AccountMenu({ account, open: openProp, onOpenChange, ton
           <strong>{account.name}</strong>
           <span>{account.email}</span>
         </div>
-        {ACCOUNT_LINKS.map((l) => (
+        {ACCOUNT_LINKS(account.role).map((l) => (
           <Link key={l.href} href={l.href} role="menuitem" className="account__item" onClick={() => setOpen(false)}>
             {l.label}
           </Link>

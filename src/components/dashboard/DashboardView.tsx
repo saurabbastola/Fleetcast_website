@@ -1,169 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { campaigns, fleetMix, metrics, topStreets, type CampaignStatus } from "@/content/dashboard";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { firstName } from "@/lib/machines/session";
+import { api, ApiError } from "@/lib/api/client";
+import { rows } from "@/lib/api/resources";
+import type { Campaign, Page } from "@/lib/api/campaigns";
 
-function Spark({ points, trend }: { points: number[]; trend: "up" | "down" }) {
-  const w = 120;
-  const h = 36;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const d = points
-    .map((p, i) => {
-      const x = (i / (points.length - 1)) * w;
-      const y = h - ((p - min) / (max - min || 1)) * (h - 4) - 2;
-      return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <svg className={`spark spark--${trend}`} viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-hidden="true">
-      <path d={`${d} L${w} ${h} L0 ${h} Z`} className="spark__area" />
-      <path d={d} className="spark__line" />
-    </svg>
-  );
-}
+type Summary = {campaigns?:number; active_campaigns?:number; advertisements?:number; impressions?:number|null; qr_scans?:number|null; vehicles?:number; pending_vehicles?:number; approved_vehicles?:number; earnings?:number|null; assigned_advertisements?:number|null; businesses?:number; drivers?:number};
+const fmt = (n?: number | null) => n == null ? "Not available" : n.toLocaleString("en-US");
+const label = (s: string) => s.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-const STATUS_CLASS: Record<CampaignStatus, string> = {
-  Live: "live",
-  Scheduled: "scheduled",
-  "In production": "production",
-  Draft: "draft",
-};
-
-/** Overview page of the signed-in app. All numbers are SAMPLE data from content/dashboard.ts. */
 export default function DashboardView() {
   const { account } = useAuth();
+  const [summary, setSummary] = useState<Summary | null>(null); const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!account) return;
+    setLoading(true); setError("");
+    try {
+      if (account.role === "DRIVER") setSummary(await api<Summary>("/driver/dashboard/"));
+      else if (account.role === "ADMIN") setSummary(await api<Summary>("/admin/dashboard/"));
+      else {
+        const [s, c] = await Promise.all([api<Summary>("/business/dashboard/"), api<Page<Campaign>|Campaign[]>("/campaigns/?page_size=5&ordering=-created_at")]);
+        setSummary(s); setCampaigns(rows(c).slice(0, 5));
+      }
+    } catch (e) { setError(e instanceof ApiError ? e.message : "We couldn't load your dashboard. Try again."); }
+    finally { setLoading(false); }
+  }, [account]);
+  useEffect(() => { void load(); }, [load]);
   if (!account) return null;
-  const fleetTotal = fleetMix.reduce((n, f) => n + f.count, 0);
-  const topScans = Math.max(...topStreets.map((s) => s.scans));
 
-  return (
-    <div className="dview">
-      <section className="dview__hello">
-        <div>
-          <h1>Welcome back, {firstName(account)}</h1>
-          <p>Here&rsquo;s how your vehicles are performing over the last 30 days.</p>
-        </div>
-        <span className="dview__sample" title="Connect your campaigns to see live numbers">
-          Sample data
-        </span>
-      </section>
+  const cards = account.role === "DRIVER"
+    ? [{label:"Vehicles", value:fmt(summary?.vehicles)}, {label:"Pending review", value:fmt(summary?.pending_vehicles)}, {label:"Approved vehicles", value:fmt(summary?.approved_vehicles)}, {label:"Earnings", value:fmt(summary?.earnings)}]
+    : account.role === "ADMIN"
+      ? [{label:"Businesses", value:fmt(summary?.businesses)}, {label:"Drivers", value:fmt(summary?.drivers)}, {label:"Vehicles", value:fmt(summary?.vehicles)}, {label:"Campaigns", value:fmt(summary?.campaigns)}]
+      : [{label:"Campaigns", value:fmt(summary?.campaigns)}, {label:"Active campaigns", value:fmt(summary?.active_campaigns)}, {label:"Advertisements", value:fmt(summary?.advertisements)}, {label:"Impressions", value:fmt(summary?.impressions)}];
 
-      <section className="dview__metrics" aria-label="Key metrics">
-        {metrics.map((m) => (
-          <article key={m.label} className="metric">
-            <p className="metric__label">{m.label}</p>
-            <p className="metric__value">{m.value}</p>
-            <div className="metric__foot">
-              <span className={`metric__delta metric__delta--${m.trend}`}>{m.delta}</span>
-              <Spark points={m.spark} trend={m.trend} />
-            </div>
-          </article>
-        ))}
-      </section>
-
-      <div className="dview__grid">
-        <section className="dcard dcard--wide" aria-labelledby="campaigns-title">
-          <header className="dcard__head">
-            <h2 id="campaigns-title">Campaigns</h2>
-            <Link href="/contact" className="dcard__action">
-              Plan a campaign →
-            </Link>
-          </header>
-          <div className="dtable__wrap">
-            <table className="dtable">
-              <thead>
-                <tr>
-                  <th scope="col">Campaign</th>
-                  <th scope="col">Format</th>
-                  <th scope="col">Vehicles</th>
-                  <th scope="col">Status</th>
-                  <th scope="col" className="num">
-                    Impressions
-                  </th>
-                  <th scope="col" className="num">
-                    QR scans
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {campaigns.map((c) => (
-                  <tr key={c.name}>
-                    <th scope="row">{c.name}</th>
-                    <td>{c.format}</td>
-                    <td>{c.vehicles}</td>
-                    <td>
-                      <span className={`pill pill--${STATUS_CLASS[c.status]}`}>{c.status}</span>
-                    </td>
-                    <td className="num">{c.impressions}</td>
-                    <td className="num">{c.scans}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="dcard" aria-labelledby="fleet-title">
-          <header className="dcard__head">
-            <h2 id="fleet-title">Fleet on the road</h2>
-            <span className="dcard__meta">{fleetTotal} vehicles</span>
-          </header>
-          <ul className="bars">
-            {fleetMix.map((f) => (
-              <li key={f.label}>
-                <span>{f.label}</span>
-                <span className="bars__track">
-                  <i style={{ width: `${(f.count / fleetTotal) * 100}%` }} />
-                </span>
-                <strong>{f.count}</strong>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="dcard" aria-labelledby="streets-title">
-          <header className="dcard__head">
-            <h2 id="streets-title">Top streets by QR scans</h2>
-          </header>
-          <ul className="bars bars--orange">
-            {topStreets.map((s) => (
-              <li key={s.street}>
-                <span>{s.street}</span>
-                <span className="bars__track">
-                  <i style={{ width: `${(s.scans / topScans) * 100}%` }} />
-                </span>
-                <strong>{s.scans.toLocaleString("en-US")}</strong>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="dcard dcard--wide dcard--steps" aria-labelledby="next-title">
-          <header className="dcard__head">
-            <h2 id="next-title">Get your first campaign on the road</h2>
-          </header>
-          <ol className="steps-mini">
-            <li>
-              <strong>Complete your profile</strong>
-              <span>Add your name and company so we can tailor proposals.</span>
-              <Link href="/dashboard/settings">Open settings</Link>
-            </li>
-            <li>
-              <strong>Pick formats and streets</strong>
-              <span>Buses, trains or taxis, on the routes your customers use.</span>
-              <Link href="/#formats">Explore formats</Link>
-            </li>
-            <li>
-              <strong>Send your creative</strong>
-              <span>Our Wrap Studio fits it to each vehicle and adds a QR code.</span>
-              <Link href="/contact">Talk to the studio</Link>
-            </li>
-          </ol>
-        </section>
-      </div>
-    </div>
-  );
+  return <div className="dview">
+    <section className="dview__hello"><div><h1>Welcome back, {firstName(account)}</h1><p>{account.role === "DRIVER" ? "Manage your profile, vehicles, and verification." : account.role === "ADMIN" ? "Review platform activity and pending approvals." : "Manage your campaigns and advertising creative."}</p></div><Link className="btn btn--orange btn--sm" href={account.role === "DRIVER" ? "/dashboard/vehicles" : account.role === "ADMIN" ? "/dashboard/admin/businesses" : "/dashboard/campaigns/new"}>{account.role === "DRIVER" ? "+ Register vehicle" : account.role === "ADMIN" ? "Review businesses" : "+ New campaign"}</Link></section>
+    {loading ? <p className="api-state" role="status">Loading dashboard…</p> : error ? <div className="api-error" role="alert">{error} <button type="button" onClick={() => void load()}>Try again</button></div> : <>
+      <section className="dview__metrics" aria-label="Account summary">{cards.map((m) => <article key={m.label} className="metric"><p className="metric__label">{m.label}</p><p className="metric__value metric__value--small">{m.value}</p></article>)}</section>
+      {account.role === "BUSINESS" && <section className="dcard dcard--wide" aria-labelledby="campaigns-title"><header className="dcard__head"><h2 id="campaigns-title">Campaigns</h2><Link href="/dashboard/campaigns" className="dcard__action">Manage campaigns →</Link></header>
+        {campaigns.length ? <div className="dtable__wrap"><table className="dtable"><thead><tr><th>Campaign</th><th>Budget</th><th>Dates</th><th>Status</th><th>Impressions</th><th>QR scans</th></tr></thead><tbody>{campaigns.map((c) => <tr key={c.id}><th scope="row">{c.name}</th><td>{Number(c.budget).toLocaleString("en-US",{style:"currency",currency:"USD"})}</td><td>{c.start_date || "—"}{c.end_date ? ` – ${c.end_date}` : ""}</td><td><span className="pill pill--draft">{label(c.status)}</span></td><td>Not available</td><td>Not available</td></tr>)}</tbody></table></div> : <div className="api-empty"><p>No campaigns yet.</p><Link href="/dashboard/campaigns/new">Create your first campaign</Link></div>}
+      </section>}
+      {account.role === "DRIVER" && <section className="dcard"><header className="dcard__head"><h2>Your vehicles</h2><Link href="/dashboard/vehicles" className="dcard__action">Manage vehicles →</Link></header><p className="api-empty">Assigned advertisements and earnings are not available yet.</p></section>}
+      {account.role === "ADMIN" && <section className="dcard"><header className="dcard__head"><h2>Platform summary</h2><Link href="/dashboard/admin/businesses" className="dcard__action">Manage accounts →</Link></header><p className="api-empty">Impression and revenue reporting is not implemented.</p></section>}
+    </>}
+  </div>;
 }

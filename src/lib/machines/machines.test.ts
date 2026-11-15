@@ -144,7 +144,7 @@ describe("signup", () => {
 });
 
 describe("session", () => {
-  const user = { id: "u1", email: "sam.lee@x.co", user_metadata: { full_name: "Sam Lee" }, app_metadata: { provider: "google" } };
+  const user = { id: "u1", email: "sam.lee@x.co", name: "Sam Lee", auth_provider: "google", role: "BUSINESS" as const };
 
   it("loading resolves to signedIn or signedOut", () => {
     const a = toAccount(user);
@@ -155,12 +155,12 @@ describe("session", () => {
     const s = sessionReducer(sessionLoading, { type: "RESOLVED", account: toAccount(user) });
     assert.equal(sessionReducer(s, { type: "RESOLVED", account: toAccount(user) }), s);
   });
-  it("builds a display account from Supabase user data", () => {
+  it("builds a display account from the Django profile", () => {
     const a = toAccount(user)!;
     assert.deepEqual([a.name, a.initials, a.provider], ["Sam Lee", "SL", "google"]);
     assert.equal(toAccount({ id: "u2", email: "ops@fleet.io" })!.name, "ops");
   });
-  it("remembers a deliberate sign-out, even when Supabase confirms it afterwards", () => {
+  it("remembers a deliberate sign-out after the session clears", () => {
     const signedIn = sessionReducer(sessionLoading, { type: "RESOLVED", account: toAccount(user) });
     const out = sessionReducer(signedIn, { type: "RESOLVED", account: null, byUser: true });
     assert.deepEqual(out, { status: "signedOut", byUser: true });

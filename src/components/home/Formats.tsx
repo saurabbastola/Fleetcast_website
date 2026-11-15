@@ -128,6 +128,7 @@ export default function Formats() {
           <p className="formats__label">{item.label}</p>
           <h3 className="formats__headline">{item.headline}</h3>
           <p className="formats__text">{item.text}</p>
+          <p className="formats__sample-note">Illustrative format examples. Figures are placeholders and are not live campaign data.</p>
           <dl className="formats__stats">
             {item.stats.map((s) => (
               <div key={s.label}>

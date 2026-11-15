@@ -51,6 +51,7 @@ export default function Hero() {
           </figure>
           <figure className="hero__shot hero__shot--card">
             <Image src={images.card.src} alt={images.card.alt} fill sizes="(max-width: 900px) 45vw, 20vw" />
+            <figcaption className="hero__sample-note">Illustrative dashboard · sample figures</figcaption>
           </figure>
         </div>
       </div>

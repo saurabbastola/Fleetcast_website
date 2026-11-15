@@ -13,6 +13,15 @@ next-env.d.ts
 .env
 .env.local
 .env.*.local
+backend/.env
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/development.sqlite3
+backend/development-local.sqlite3
+backend/staticfiles/
 
 # misc
 .DS_Store
@@ -20,3 +29,4 @@ next-env.d.ts
 npm-debug.log*
 .vercel
 *.tsbuildinfo
+.env*

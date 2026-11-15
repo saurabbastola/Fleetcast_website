@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
-import { sessionLoading, sessionReducer, toAccount, type Account, type SessionState } from "@/lib/machines/session";
-import { getBrowserSupabase } from "@/lib/supabase";
+import { sessionLoading, sessionReducer, type Account, type SessionState } from "@/lib/machines/session";
+import { asAccount, getProfile, logout as apiLogout } from "@/lib/api/auth";
 
 type AuthValue = {
   session: SessionState;
@@ -15,32 +15,21 @@ type AuthValue = {
 const AuthContext = createContext<AuthValue | null>(null);
 
 /**
- * App-wide sign-in state, driven by the real Supabase session (machine:
- * lib/machines/session.ts). Mounted once in the root layout; read it with useAuth().
+ * App-wide sign-in state, driven by Django's HttpOnly JWT cookie session.
  * <html data-auth="loading|signedIn|signedOut"> mirrors it for CSS, tests and agents.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, dispatch] = useReducer(sessionReducer, sessionLoading);
 
   useEffect(() => {
-    const supabase = getBrowserSupabase();
-    if (!supabase) {
-      dispatch({ type: "RESOLVED", account: null });
-      return;
-    }
     let live = true;
-    supabase.auth
-      .getSession()
-      .then(({ data }) => live && dispatch({ type: "RESOLVED", account: toAccount(data.session?.user) }))
-      .catch(() => live && dispatch({ type: "RESOLVED", account: null }));
-    // Sign-in, sign-out, Google redirects, profile edits and other tabs all arrive here.
-    // (Only dispatch inside this callback: Supabase warns against awaiting its own calls in it.)
-    const { data } = supabase.auth.onAuthStateChange((_event, s) => {
-      if (live) dispatch({ type: "RESOLVED", account: toAccount(s?.user) });
-    });
+    const resolve = () => getProfile().then((user) => live && dispatch({ type: "RESOLVED", account: asAccount(user) })).catch(() => live && dispatch({ type: "RESOLVED", account: null }));
+    void resolve();
+    const changed = () => { void resolve(); };
+    window.addEventListener("fleetcast-auth-changed", changed);
     return () => {
       live = false;
-      data.subscription.unsubscribe();
+      window.removeEventListener("fleetcast-auth-changed", changed);
     };
   }, []);
 
@@ -51,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     // Mark it as deliberate first, so protected pages don't bounce to /login.
     dispatch({ type: "RESOLVED", account: null, byUser: true });
-    await getBrowserSupabase()?.auth.signOut();
+    try { await apiLogout(); } catch { /* local UI is signed out even if the network is unavailable */ }
   }, []);
 
   const value = useMemo<AuthValue>(

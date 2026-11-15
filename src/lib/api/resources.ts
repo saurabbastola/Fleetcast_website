@@ -1,0 +1,8 @@
+import { api, type ApiError } from "./client";
+export { api, ApiError };
+export function rows<T>(data: {results?: T[]} | T[]): T[] { return Array.isArray(data) ? data : data.results ?? []; }
+export const businessApi = { profile: () => api<any>("/business/profile/"), update: (body: FormData | Record<string, unknown>) => api<any>("/business/profile/", {method:"PATCH", body: body instanceof FormData ? body : JSON.stringify(body)}), dashboard: () => api<any>("/business/dashboard/") };
+export const driverApi = { profile: () => api<any>("/driver/profile/"), update: (body: FormData | Record<string, unknown>) => api<any>("/driver/profile/", {method:"PATCH", body: body instanceof FormData ? body : JSON.stringify(body)}), dashboard: () => api<any>("/driver/dashboard/") };
+export const vehicleApi = { list: () => api<any>("/vehicles/"), create: (body: FormData) => api<any>("/vehicles/", {method:"POST", body}), update: (id: string|number, body: FormData) => api<any>(`/vehicles/${id}/`, {method:"PATCH", body}), remove: (id: string|number) => api(`/vehicles/${id}/`, {method:"DELETE"}) };
+export const adApi = { list: () => api<any>("/advertisements/"), create: (body: FormData) => api<any>("/advertisements/", {method:"POST", body}), update: (id: string|number, body: FormData) => api<any>(`/advertisements/${id}/`, {method:"PATCH", body}), remove: (id: string|number) => api(`/advertisements/${id}/`, {method:"DELETE"}) };
+export const profileApi = { update: (data: Record<string, unknown>) => api<any>("/auth/profile/", {method:"PATCH", body:JSON.stringify(data)}), changePassword: (data: Record<string, string>) => api<any>("/auth/change-password/", {method:"POST", body:JSON.stringify(data)}) };

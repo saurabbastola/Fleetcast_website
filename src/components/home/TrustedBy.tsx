@@ -44,6 +44,7 @@ export default function TrustedBy() {
           {trustedBy.title}
         </h2>
         <p className="trusted__text">{trustedBy.text}</p>
+        <p className="trusted__sample-note">Illustrative sample wordmarks only; no customer relationship is implied.</p>
       </Reveal>
 
       <Reveal className="trusted__marquee" effect="fade" delay={120}>

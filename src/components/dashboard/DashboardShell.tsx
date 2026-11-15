@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import AccountBar from "@/components/dashboard/AccountBar";
 import { Mark } from "@/components/Logo";
-import { dashNav, type DashNavItem } from "@/content/dashboard";
 import { useAuth } from "@/lib/auth";
+
+type DashNavItem = { label: string; href?: string; icon: "home" | "megaphone" | "truck" | "brush" | "chart" | "gear" };
 
 function NavIcon({ name }: { name: DashNavItem["icon"] }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -30,6 +31,26 @@ function NavIcon({ name }: { name: DashNavItem["icon"] }) {
   );
 }
 
+function navFor(role: string): DashNavItem[] {
+  if (role === "DRIVER") return [
+    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
+    {label:"Profile",href:"/dashboard/profile",icon:"gear"},{label:"Notifications",href:"/dashboard/notifications",icon:"chart"},
+    {label:"Earnings",href:"/dashboard/earnings",icon:"chart"},{label:"Settings",href:"/dashboard/settings",icon:"gear"},
+  ];
+  if (role === "ADMIN") return [
+    {label:"Overview",href:"/dashboard/admin",icon:"home"},{label:"Users",href:"/dashboard/admin/users",icon:"gear"},
+    {label:"Businesses",href:"/dashboard/admin/businesses",icon:"megaphone"},{label:"Drivers",href:"/dashboard/admin/drivers",icon:"truck"},
+    {label:"Vehicles",href:"/dashboard/admin/vehicles",icon:"truck"},{label:"Advertisements",href:"/dashboard/admin/advertisements",icon:"brush"},
+    {label:"Campaigns",href:"/dashboard/admin/campaigns",icon:"chart"},
+  ];
+  return [
+    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Campaigns",href:"/dashboard/campaigns",icon:"megaphone"},
+    {label:"Advertisements",href:"/dashboard/advertisements",icon:"brush"},{label:"Profile",href:"/dashboard/profile",icon:"gear"},
+    {label:"Payments",href:"/dashboard/payments",icon:"chart"},{label:"Notifications",href:"/dashboard/notifications",icon:"chart"},
+    {label:"Settings",href:"/dashboard/settings",icon:"gear"},
+  ];
+}
+
 /**
  * Signed-in app shell: sidebar + account bar around every /dashboard page.
  * Guards the area: while the session loads it shows a status line; signed-out
@@ -39,11 +60,15 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   const { session, account } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const dashNav = account ? navFor(account.role) : [];
 
   useEffect(() => {
     // Only a missing/expired session goes to /login; "Sign out" takes people home instead.
     if (session.status === "signedOut" && !session.byUser) router.replace("/login");
-  }, [session, router]);
+    if (account && pathname.startsWith("/dashboard/admin") && account.role !== "ADMIN") router.replace("/dashboard");
+    if (account && ["/dashboard/campaigns", "/dashboard/advertisements", "/dashboard/payments"].some((p) => pathname.startsWith(p)) && account.role !== "BUSINESS") router.replace("/dashboard");
+    if (account && ["/dashboard/vehicles", "/dashboard/earnings"].some((p) => pathname.startsWith(p)) && account.role !== "DRIVER") router.replace("/dashboard");
+  }, [session, router, account, pathname]);
 
   if (!account) {
     return (

@@ -1,7 +1,6 @@
 # Fleetcast website
 
-Marketing site for Fleetcast, built with **Next.js (App Router) + TypeScript + plain CSS**.
-It's ready for **Supabase** (forms and login) and **Vercel** (hosting).
+Fleetcast vehicle advertising platform, built with **Next.js (App Router) + TypeScript + plain CSS**, backed by Django REST Framework and Supabase PostgreSQL/Storage.
 
 ## Run it locally
 
@@ -18,7 +17,7 @@ Then open http://localhost:3000.
 | --- | --- |
 | Home | `/` |
 | Contact form | `/contact` |
-| Login (Supabase auth) | `/login` (also `/login?portal=fleet`, `/login?portal=developer`) |
+| Login | `/login` (also `/login?portal=fleet`, `/login?portal=developer`) |
 | Create an account | `/signup` (same `?portal=` options) |
 | Dashboard (signed in) | `/dashboard`, `/dashboard/settings` |
 | Placeholder pages for every menu/footer link | e.g. `/solutions/marketers` |
@@ -42,12 +41,15 @@ Then open http://localhost:3000.
 
 ## Signed-in experience
 
-Sign-in state comes from the real Supabase session, not a separate flag: `AuthProvider` (in `app/layout.tsx`) feeds `lib/machines/session.ts`, and any component reads it with `useAuth()` → `{ isLoggedIn, account, signOut }`. `<html data-auth="loading|signedIn|signedOut">` mirrors it.
+Sign-in state comes from Django's JWT session in HttpOnly cookies: `AuthProvider` (in `src/app/layout.tsx`) loads `/api/v1/auth/profile/`, and components read `useAuth()` → `{ isLoggedIn, account, signOut }`. Access and refresh tokens are not exposed to browser JavaScript. The API client refreshes expired sessions and sends CSRF tokens on writes.
 
 - **Signed out:** the public landing page (`components/home/LandingPage.tsx`).
 - **Signed in:** opening `/` goes to `/dashboard` (`HomeGate`). On marketing pages the header's *Login* menu becomes the account menu: avatar, name, Dashboard, Settings, Sign out (`components/account/AccountMenu.tsx`).
-- **Dashboard** (`/dashboard`, `components/dashboard/`): sidebar, account bar, "Welcome back, <name>", metric cards, campaigns, fleet mix and top streets. All numbers are **sample data** from `content/dashboard.ts` and the page says so. Signed-out visitors are sent to `/login`.
-- **Settings** (`/dashboard/settings`): saves the name to the Supabase user and to `profiles`.
+- **Business dashboard** (`/dashboard`): campaign and account counts come from Django. Impressions, QR scans, payment figures, and street analytics show as unavailable until supported by backend data.
+- **Driver dashboard** (`/dashboard`): vehicles and verification counts come from Django; earnings and assigned advertisements are explicitly unavailable.
+- **Admin dashboard** (`/dashboard/admin`): platform counts and approval queues are protected by Django role permissions.
+- **Management pages**: `/dashboard/campaigns`, `/dashboard/advertisements`, `/dashboard/vehicles`, `/dashboard/payments`, `/dashboard/notifications`, and `/dashboard/profile`. Admin lists are under `/dashboard/admin/`.
+- **Settings** (`/dashboard/settings`): updates the Django user profile and supports password changes.
 - **Sign out** returns to the landing page.
 
 ## State machines
@@ -97,39 +99,58 @@ Nearly everything is in **`src/content/site.ts`**: nav menus, headlines, cards, 
 
 **Colors, fonts and the design tokens** live in `src/styles/base.css`: colours (`--orange`, `--mint`, `--navy`, `--peach`), the type scale (`--fs-h2`, `--fs-h3`, `--fs-lead`), radii (`--radius`, `--radius-btn`) and shadows (`--shadow-sm/md/lg`). Buttons are at least 44px tall. The fonts are Hanken Grotesk (display) and Instrument Sans (UI), loaded with `next/font` in `src/app/layout.tsx`.
 
-## Connect Supabase
+## Django backend and Supabase database
 
-1. Create a project at https://supabase.com.
-2. In **SQL Editor**, run `supabase/schema.sql`. It creates `contact_submissions` and `playbook_leads`, with insert-only Row Level Security.
-3. Copy `.env.example` to `.env.local` and fill in:
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...   # or the publishable key
-   ```
-4. Restart `npm run dev`. The contact form and the playbook form will now save rows to Supabase. Until you connect it, submissions are only logged in the terminal.
-5. **Accounts.** In **SQL Editor**, also run `supabase/profiles.sql`. It adds a `profiles` table that fills itself whenever someone signs up (name, email, `email` or `google`, portal), readable only by that user.
+The Django REST API is the application backend. Next.js does not use Supabase Auth or query application tables directly. Supabase PostgreSQL remains the database and Supabase Storage is accessed only by Django. The frontend environment file contains only `NEXT_PUBLIC_API_URL`.
 
-### Sign-up and sign-in
+### Start the frontend
 
-`/signup` offers **Continue with Google** and **email + password**; `/login` offers Google and email + password, with a "Forgot password?" link.
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
 
-**Google (recommended, no emails needed):**
-1. In [Google Cloud Console](https://console.cloud.google.com) → *APIs & Services* → *Credentials*, create an **OAuth client ID** (type *Web application*).
-2. Under *Authorized redirect URIs*, add `https://<your-project-ref>.supabase.co/auth/v1/callback`.
-3. In Supabase → **Authentication → Sign In / Providers → Google**, switch it on and paste the client ID and secret.
+### Start Django
 
-**Email sign-up with a 6-digit code:**
-1. Supabase → **Authentication → Emails → Confirm signup**: make sure the template contains `{{ .Token }}` (the code). Keep `{{ .ConfirmationURL }}` too if you want the link to work as well.
-2. **Important:** Supabase's built-in email sender only delivers to members of your Supabase team, a few per hour. For real visitors, connect your own SMTP (e.g. Resend, Postmark, SendGrid) under **Authentication → Emails → SMTP Settings**. Until then, use Google, or add users by hand under **Authentication → Users → Add user** with *Auto Confirm User* ticked.
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Set SECRET_KEY, DATABASE_URL, allowed origins, and OAuth/storage values in this ignored file.
+python manage.py runserver
+```
 
-**Redirect URLs:** in **Authentication → URL Configuration**, set *Site URL* to your live domain and add `http://localhost:3000/**` and `https://<your-vercel-domain>/**` to *Redirect URLs*. Google and email links send people back to `/login`, which signs them in.
+The public Supabase schema was inventoried read-only. It contains `contact_submissions`, `playbook_leads`, and `profiles`; no public business, driver, vehicle, advertisement, campaign, payment, or notification tables were present. The existing lead tables are mapped as unmanaged Django models, so their schema is preserved. `profiles.id` references `auth.users`; the profile table and Supabase Auth records are not modified by Django migrations.
 
-## Deploy to Vercel
+When `DATABASE_URL` is blank, local development uses a fresh `backend/development-local.sqlite3`. The older `backend/development.sqlite3` is left untouched because its built-in migration history predates the custom user model.
+
+Initial Django migrations now create only the new application tables (`accounts_user`, business/driver profiles, vehicles, advertisements, campaigns, payments, and notifications). They contain `CreateModel` operations only and have been verified on a fresh temporary SQLite database. They have **not** been applied to Supabase. The public-schema inventory does not inspect Supabase Auth or Storage. Run `python manage.py inspect_database` for public table structure and `python manage.py inspect_supabase` for auth/storage structure, aggregate legacy account counts, bucket metadata, and public RLS policies. Both commands are read-only and refuse the SQLite fallback; the second does not emit user emails or IDs.
+
+Set up Google as a **Web application** OAuth client in [Google Cloud Console](https://console.cloud.google.com). Add the exact server callback URL from `GOOGLE_REDIRECT_URI` to Authorized redirect URIs (local default: `http://localhost:8000/api/v1/auth/google/callback/`). Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` only in Django's private `.env`. For production use HTTPS, `COOKIE_SECURE=True`, and the exact production frontend/backend origins. Do not place secrets in `NEXT_PUBLIC_` variables.
+
+Email/password registration verifies the supplied address before activating the account; password reset uses a one-day signed link. Configure SMTP using the `EMAIL_*` settings in the backend environment. Google OAuth is implemented through Django with authorization code, state, PKCE, nonce, and Google ID-token verification. A real sign-in attempt returned `401 invalid_client`, so successful Google login is **not** verified. Existing Supabase Auth users and `public.profiles` records are left untouched; follow [AUTH_MIGRATION.md](AUTH_MIGRATION.md) for the staged account import and password reset plan.
+
+For local testing without an SMTP provider, set `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` in `backend/.env`. Verification and password-reset links will print in the Django terminal; use them only in local development. For production, configure SMTP and use Django's SMTP email backend.
+
+The backend sends password reset email using Django's configured email backend. Configure SMTP before using password reset outside development. Create/configure private Supabase Storage buckets named by `SUPABASE_ADS_BUCKET` and `SUPABASE_DOCUMENTS_BUCKET`; the service-role key belongs only in Django's `.env`. Document storage access is returned through short-lived signed URLs.
+
+`supabase/schema.sql` documents the existing public lead/contact tables. Django maps those tables as unmanaged models and handles inserts through its API. `supabase/profiles.sql` is legacy Supabase Auth setup; do not use it to create new application accounts under the Django auth architecture.
+
+## Deploy the Django API to Render
+
+The repository includes a `render.yaml` Blueprint for the Django API. It does not create a database or run migrations. Connect this GitHub repository in Render using **New → Blueprint**, review the `fleetcast-django-api` service, and provide the private environment values (especially the existing Supabase `DATABASE_URL`, Google client credentials, Supabase Storage key, and SMTP credentials) in Render. Do not paste secrets into GitHub or chat. The configured health check is `/api/v1/health/` and does not query the database.
+
+After the service is created, run `python manage.py inspect_database` and `python manage.py inspect_supabase` from the Render Shell and review their metadata-only output. Do not apply migrations against Supabase until existing Auth identities, RLS, storage buckets, and account relationships have been reviewed and compatible mappings are planned. Render auto-deploy is disabled in the Blueprint so the service is deployed only after you configure it.
+
+## Deploy the frontend to Vercel
 
 1. Push this folder to a GitHub repo.
 2. In Vercel, choose **Add New → Project** and import the repo. The framework is detected as Next.js.
-3. Add the same environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and optionally `NEXT_PUBLIC_AFTER_LOGIN_URL`).
-4. Deploy. In Supabase → Authentication → URL Configuration, set the *Site URL* to your Vercel domain and add `https://<your-vercel-domain>/**` to *Redirect URLs*, so Google sign-in, email codes/links and password resets come back to the live site.
+3. Set `NEXT_PUBLIC_API_URL` to `/api/v1`, `DJANGO_API_ORIGIN` to the Django service origin (for example `https://fleetcast-django-api.onrender.com`), and `DJANGO_API_URL` to that origin plus `/api/v1`. The Vercel rewrite proxies browser API traffic through the frontend origin for first-party HttpOnly cookies; server-side public form proxies use `DJANGO_API_URL` directly.
+4. Set the Django environment values in Render, then deploy the frontend. Register `https://<your-vercel-domain>/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI and set Django's `FRONTEND_URL` to the same Vercel origin. The Blueprint currently uses `https://fleetcast-website-pjcr.vercel.app`; update it if your production alias differs.
 
 ## Project structure
 
@@ -141,13 +162,16 @@ src/
     (site)/page.tsx         home page
     (site)/contact/         contact page
     (site)/[...slug]/       placeholder pages for menu links
-    login/                  login page (no site chrome)
-    api/contact, api/leads  Supabase inserts
+    login/, signup/         Django-backed auth screens
+    api/contact, api/leads  Django API proxy
   components/               Header, Footer, VideoPlayer, GlobalMap, …
   components/home/          one file per home-page section
   content/site.ts           all copy, links and image paths
-  lib/                      supabase client, useInView, useAutoCycle, useSubmit
+  lib/api/                  centralized Django API/auth clients
+  lib/                      useInView, useAutoCycle, useSubmit
   lib/machines/             pure state machines + their tests
   styles/                   base, header, home, components, pages
 supabase/schema.sql
 ```
+
+`backend/` contains the modular Django REST Framework API, create-only initial migrations for its new application tables, and a Render Blueprint. Supabase migrations remain unapplied pending inspection of the existing `auth`/`storage` schemas and review of legacy accounts.

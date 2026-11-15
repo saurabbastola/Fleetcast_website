@@ -419,6 +419,12 @@
   gap: 10px;
   margin: 26px 0 18px;
 }
+.formats__sample-note {
+  margin: 10px 0 0;
+  color: #5f6877;
+  font-size: 12px;
+  line-height: 1.45;
+}
 .formats__stats div {
   display: flex;
   flex-direction: column-reverse;

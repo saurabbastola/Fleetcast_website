@@ -387,7 +387,7 @@ export default function Header() {
                   </span>
                 </div>
                 <div className="mobile-account__links">
-                  {ACCOUNT_LINKS.map((l) => (
+                  {ACCOUNT_LINKS(account.role).map((l) => (
                     <Link key={l.href} href={l.href} tabIndex={mobileOpen ? 0 : -1}>
                       {l.label}
                     </Link>

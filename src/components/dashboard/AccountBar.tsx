@@ -9,12 +9,11 @@ export default function AccountBar({ account }: { account: Account }) {
   return (
     <header className="dash-bar">
       <p className="dash-bar__crumb">
-        <Link href="/dashboard">Dashboard</Link>
+        <Link href={account.role === "ADMIN" ? "/dashboard/admin" : "/dashboard"}>Dashboard</Link>
       </p>
       <div className="dash-bar__right">
-        <Link href="/contact" className="btn btn--orange btn--sm dash-bar__cta">
-          + New campaign
-        </Link>
+        {account.role === "BUSINESS" && <Link href="/dashboard/campaigns/new" className="btn btn--orange btn--sm dash-bar__cta">+ New campaign</Link>}
+        {account.role === "DRIVER" && <Link href="/dashboard/vehicles/new" className="btn btn--orange btn--sm dash-bar__cta">+ Register vehicle</Link>}
         <AccountMenu account={account} />
       </div>
     </header>

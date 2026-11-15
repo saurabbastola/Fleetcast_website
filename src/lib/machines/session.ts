@@ -18,6 +18,7 @@ export type Account = {
   initials: string;
   avatarUrl: string | null;
   provider: string;
+  role: "ADMIN" | "BUSINESS" | "DRIVER";
 };
 
 export type SessionState =
@@ -29,7 +30,7 @@ export type SessionEvent = { type: "RESOLVED"; account: Account | null; byUser?:
 export const sessionLoading: SessionState = { status: "loading" };
 
 const same = (a: Account, b: Account) =>
-  a.id === b.id && a.email === b.email && a.name === b.name && a.avatarUrl === b.avatarUrl && a.provider === b.provider;
+  a.id === b.id && a.email === b.email && a.name === b.name && a.avatarUrl === b.avatarUrl && a.provider === b.provider && a.role === b.role;
 
 export function sessionReducer(s: SessionState, e: SessionEvent): SessionState {
   if (!e.account) {
@@ -41,27 +42,31 @@ export function sessionReducer(s: SessionState, e: SessionEvent): SessionState {
   return { status: "signedIn", account: e.account };
 }
 
-/** The subset of a Supabase user we read. */
+/** Maps a Django profile response shape into the session account type. */
 type UserLike = {
   id: string;
   email?: string | null;
-  user_metadata?: Record<string, unknown> | null;
-  app_metadata?: Record<string, unknown> | null;
+  name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  avatar_url?: string | null;
+  auth_provider?: string | null;
+  role?: Account["role"];
 };
 
 export function toAccount(user: UserLike | null | undefined): Account | null {
   if (!user) return null;
-  const meta = user.user_metadata ?? {};
   const email = user.email ?? "";
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
-  const name = str(meta.full_name) ?? str(meta.name) ?? (email.split("@")[0] || "there");
+  const name = str(user.name) ?? ([str(user.first_name), str(user.last_name)].filter(Boolean).join(" ") || email.split("@")[0] || "there");
   return {
     id: user.id,
     email,
     name,
     initials: initialsOf(name),
-    avatarUrl: str(meta.avatar_url) ?? str(meta.picture),
-    provider: str(user.app_metadata?.provider) ?? "email",
+    avatarUrl: str(user.avatar_url),
+    provider: str(user.auth_provider) ?? "password",
+    role: user.role ?? "BUSINESS",
   };
 }
 

@@ -348,6 +348,102 @@ a.dash__link:hover {
   font-size: clamp(26px, 2.3vw, 34px);
   letter-spacing: -0.02em;
 }
+.metric__value--small {
+  font-size: clamp(18px, 1.6vw, 24px);
+  overflow-wrap: anywhere;
+}
+.api-state,
+.api-empty {
+  padding: 22px 4px;
+  color: var(--dash-muted);
+}
+.api-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid #f2b8b5;
+  border-radius: 10px;
+  background: #fff7f6;
+  color: #8f1d18;
+  margin-bottom: 16px;
+}
+.api-error button,
+.collection-actions button {
+  padding: 5px 8px;
+  color: var(--navy);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.collection-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  color: var(--dash-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.collection-search input {
+  width: min(100%, 360px);
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--navy);
+}
+.collection-actions {
+  white-space: nowrap;
+}
+.collection-actions button + button {
+  margin-left: 8px;
+}
+.collection-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  color: var(--dash-muted);
+  font-size: 14px;
+}
+.collection-pagination button {
+  padding: 7px 10px;
+  border: 1px solid var(--dash-line);
+  border-radius: 7px;
+  color: var(--navy);
+  font-weight: 600;
+}
+.collection-pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.auth-role {
+  margin: 0 0 14px;
+}
+.dform textarea,
+.dform select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--navy);
+  font: inherit;
+}
+.dform textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.dform textarea:focus,
+.dform select:focus {
+  outline: 3px solid rgba(222, 73, 3, 0.18);
+  border-color: var(--orange);
+}
 .metric__foot {
   display: flex;
   align-items: flex-end;
