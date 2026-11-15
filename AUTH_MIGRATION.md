@@ -9,6 +9,10 @@ This is a non-destructive migration plan. No Supabase Auth users, identities, pr
 3. Confirm the legacy identity mapping. `profiles.portal` values `ads` and `fleet` may be candidates for BUSINESS and DRIVER. Do not automatically map unknown portals or grant ADMIN based on Supabase metadata. Resolve unknown roles manually.
 4. Map each imported Supabase UUID into Django's `legacy_supabase_user_id`. Map verified Google provider subjects from `auth.identities` into `provider_subject` only after checking identity/provider ownership. Never merge accounts based only on matching email strings.
 
+### Current inventory (read-only, 2026-11-15)
+
+The hosted project has 3 rows in `auth.users` and 4 provider identity rows: 1 `email` and 3 `google`. These are provider-identity counts, not distinct users per provider; the aggregate output does not show whether an account has multiple providers or how identities map to `public.profiles`. Do not infer import/link decisions from these totals. There are no existing Storage buckets. The public `profiles` table is linked to `auth.users` and has own-row SELECT/UPDATE RLS policies; existing Auth users and profile rows were not modified.
+
 ## Passwords and verification
 
 - Preserve `auth.users` and the existing Supabase Auth login path during the migration window. Do not assume Supabase password hashes are directly compatible with Django's configured hashers; verify format and compatibility in staging before any import.

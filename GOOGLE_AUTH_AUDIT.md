@@ -37,6 +37,8 @@ The backend stores state, nonce, verifier, and selected Business/Driver role in 
 
 The local backend `.env` now contains Google credentials and a Supabase connection URI, but those values are ignored and were not copied into this audit. A browser attempt returned `401 invalid_client` / “OAuth client was not found”; the credential/client setup is therefore still failing. No successful Google sign-in or callback is verified. For the Vercel same-origin API proxy, register the production callback from `GOOGLE_REDIRECT_URI`, currently planned as `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/`.
 
+A read-only Supabase inventory later found 3 Auth users and 3 Google provider identity rows (plus 1 email identity row). These counts do not identify which Google identities correspond to which user/profile, and they do not validate the current Django Google OAuth client. Preserve those accounts and require verified subject-based mapping during any future account import.
+
 ## Recommended Django-authoritative flow
 
 Use a maintained OAuth/OIDC client on Django for authorization-code flow with state validation and PKCE where supported. Django should validate the provider response and verified email, resolve/link a local account only under explicit safe rules, apply account-active and role checks, then establish the Django JWT session through secure HttpOnly cookies or a one-time, short-lived, single-use handoff. New Google users must select Business or Driver through a controlled registration process; Google identity must never grant ADMIN. Do not link an existing account solely because a Google email string matches unless identity verification and account-linking policy makes that safe.

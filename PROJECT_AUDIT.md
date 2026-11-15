@@ -104,16 +104,17 @@ Create-only initial migrations were generated for the new Django app tables and 
 
 The public inventory does not include the `auth` or `storage` schemas. The new read-only `inspect_supabase` management command reports Auth/Storage column metadata, aggregate Auth user/provider counts, bucket metadata, and public RLS policy metadata without emitting user rows. Run it from a network that can reach Supabase before account migration or deployment cutover.
 
+The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 Supabase Auth users and provider identity counts of 1 `email` and 3 `google` identities (provider counts are identity rows, not distinct users). It found no Storage buckets. The existing `public.profiles` foreign key to `auth.users` and its own-row SELECT/UPDATE policies remain relevant to any account transition; the lead tables have public INSERT policies. No Auth users, profiles, RLS policies, buckets, or application tables were changed. Before importing users, inspect account-to-identity/profile mappings through a controlled staging procedure; the aggregate report does not establish which identities belong to which profiles.
+
 ### Deployment status
 
 - A Render Blueprint and a same-origin Vercel API rewrite are prepared. The Blueprint does not run database migrations and requires a private `DATABASE_URL`.
 - Vercel is linked locally to `fleetcast-website-pjcr`; production still has the legacy Supabase environment variables and no production Django API URL. No redeploy has been made.
 - The frontend production build and API rewrite build pass; frontend tests pass (33) and Django tests pass (11) against isolated SQLite.
-- Render service creation, Supabase Auth/Storage inventory, safe Supabase migration review, and live Google OAuth verification remain outstanding.
+- Render service creation, safe Supabase account migration review, Storage bucket setup/policy review, and live Google OAuth verification remain outstanding.
 
 ## Remaining manual setup
 
-- Run `python manage.py inspect_supabase` from a network that resolves the Supabase Session pooler; review its Auth identity counts, Storage bucket metadata, and public RLS policies before cutover.
 - Connect the GitHub repository to Render, fill the private Render environment values, and verify health before configuring Vercel production API variables.
 - Add the production Vercel callback URI to the Google Web OAuth client and resolve the reported `401 invalid_client` before claiming Google sign-in works.
-- Existing Supabase Auth users, `public.profiles`, and Storage buckets remain untouched; account migration and password resets still require a separate plan/rehearsal.
+- Existing Supabase Auth users and `public.profiles` remain untouched; account migration and password resets still require a separate plan/rehearsal. No Storage buckets exist yet; create suitable buckets and access policies only after confirming the intended public/private behavior.
