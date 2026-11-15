@@ -106,7 +106,7 @@ The public inventory does not include the `auth` or `storage` schemas. The new r
 
 The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 confirmed Supabase Auth users, all 3 with distinct Google identities, and 1 of those accounts also has an email identity. Two `public.profiles` rows link to Auth users, both with NULL `portal`; the third Auth user has no profile row. The existing `public.profiles` foreign key to `auth.users` and own-row SELECT/UPDATE policies remain relevant; the lead tables have public INSERT policies. The additive Django migrations created new application/framework tables only; no Auth users, profiles, lead rows, RLS policies, or existing tables were modified. A verified Google subject bridge now imports legacy accounts just in time, asks the user to select Business or Driver, and records the legacy UUID. That code is not deployed until the Render service is updated.
 
-The Storage buckets `advertisements` and `documents` were created as private buckets with 10 MB limits and MIME restrictions matching the Django upload validator. No client RLS policies were added; Django uses its server-only service-role key for object writes and signed reads. The `store_upload` content-type bug was fixed and covered by a backend test, but the fix is not live until Render is redeployed.
+The Storage buckets `advertisements` and `documents` were created as private buckets with 10 MB limits and MIME restrictions matching the Django upload validator. No client RLS policies were added; Django uses its server-only service-role key for object writes and signed reads. The `store_upload` content-type bug was fixed, covered by a backend test, and deployed to Render. End-to-end upload still needs an authenticated account and a successful real file upload.
 
 ### Deployment status
 
@@ -115,10 +115,10 @@ The Storage buckets `advertisements` and `documents` were created as private buc
 - Vercel Production is deployed at `https://fleetcast-website-pjcr.vercel.app` with Django API environment configuration. The production `/api/v1/health/` proxy returns HTTP 200 from Gunicorn.
 - Frontend typecheck and 33 tests pass; production build passes when Google Fonts can be fetched. Django tests previously passed (11) against isolated SQLite.
 - The live Google OAuth client ID is not listed in the connected Google Cloud project; production callback URI is missing on the existing `Local_web Fleetcast` client. Render credentials and Google callback need updating, then Google login must be tested.
-- Render needs redeployment for the storage content-type fix and verified legacy-account bridge. Authenticated upload/CRUD workflows remain to be tested.
+- The secure legacy-account bridge and storage upload fix are deployed. Authenticated upload/CRUD workflows remain to be tested.
 
 ## Remaining manual setup
 
-- Update the Render Google client ID/secret using the existing Web OAuth client, add the exact production callback URI, deploy the service, and complete a real sign-in.
+- Update the Render Google client ID/secret using the existing Web OAuth client, add the exact production callback URI, and complete a real sign-in.
 - Existing Supabase Auth users and `public.profiles` remain untouched until each account completes the verified Google transition. If email/password access is needed, use Django password reset after import; configure SMTP first.
-- Redeploy the backend code and test an authenticated upload. The buckets are private and service-role-only by design.
+- Test an authenticated upload. The buckets are private and service-role-only by design.

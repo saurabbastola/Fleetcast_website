@@ -148,7 +148,7 @@ The backend sends password reset email using Django's configured email backend. 
 
 The GitHub deployment branch is `codex/render-deployment`. The Render Blueprint does not apply migrations automatically. To deploy a future update, push the desired branch and deploy through Render/Vercel. Keep Google and Supabase credentials in private service environment settings, never in source control or `NEXT_PUBLIC_` variables.
 
-Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI. Production currently sends a client ID not found in the connected Google Cloud project; configure Render with the existing `Local_web Fleetcast` Web client ID and its matching secret, add the production callback, and redeploy Render. Google sign-in is not yet verified. The updated backend also needs a Render redeploy before the upload MIME fix and verified legacy-account transition are live.
+Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI. Production currently sends a client ID not found in the connected Google Cloud project; configure Render with the existing `Local_web Fleetcast` Web client ID and its matching secret. Google sign-in is not yet verified. The backend upload MIME fix and verified legacy-account transition are deployed; end-to-end upload still needs an authenticated test.
 
 ## Project structure
 
@@ -172,4 +172,4 @@ src/
 supabase/schema.sql
 ```
 
-`backend/` contains the modular Django REST Framework API, additive initial migrations for its new application tables, and a Render Blueprint. Those migrations have been applied to Supabase; the existing Auth users and `public.profiles` still need a separate account-linking/import plan.
+`backend/` contains the modular Django REST Framework API, additive initial migrations for its new application tables, and a Render Blueprint. Those migrations have been applied to Supabase. Existing Google-linked Supabase users are transitioned just in time after a verified Google subject match and explicit Business/Driver selection; the legacy Auth rows remain intact.
