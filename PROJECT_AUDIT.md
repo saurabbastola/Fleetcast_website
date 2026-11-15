@@ -100,21 +100,21 @@ See [GOOGLE_AUTH_AUDIT.md](GOOGLE_AUTH_AUDIT.md) for the focused findings and mi
 
 The read-only public-schema inventory found `contact_submissions`, `playbook_leads`, and `profiles`. It found no existing public tables for the Django business/driver/vehicle/advertisement/campaign/payment/notification models. `profiles.id` has a foreign key to `auth.users`; these legacy tables are not mapped for writes and migrations do not alter them. The two lead tables are represented by unmanaged Django models.
 
-Create-only initial migrations were generated for the new Django app tables and successfully applied to a fresh temporary SQLite database. They have not been applied to Supabase. The existing local `development.sqlite3` has an older built-in migration history and is not suitable for validating the new custom-user initial migration; it was left unchanged. Use a fresh local database for that validation.
+Create-only initial migrations were generated for the new Django app tables and successfully applied to a fresh temporary SQLite database. After the Supabase inventories confirmed there were no existing domain tables, the additive migrations were applied to Supabase successfully. The existing local `development.sqlite3` has an older built-in migration history and is not suitable for validating the new custom-user initial migration; it was left unchanged. Use a fresh local database for that validation.
 
 The public inventory does not include the `auth` or `storage` schemas. The new read-only `inspect_supabase` management command reports Auth/Storage column metadata, aggregate Auth user/provider counts, bucket metadata, and public RLS policy metadata without emitting user rows. Run it from a network that can reach Supabase before account migration or deployment cutover.
 
-The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 Supabase Auth users and provider identity counts of 1 `email` and 3 `google` identities (provider counts are identity rows, not distinct users). It found no Storage buckets. The existing `public.profiles` foreign key to `auth.users` and its own-row SELECT/UPDATE policies remain relevant to any account transition; the lead tables have public INSERT policies. No Auth users, profiles, RLS policies, buckets, or application tables were changed. Before importing users, inspect account-to-identity/profile mappings through a controlled staging procedure; the aggregate report does not establish which identities belong to which profiles.
+The follow-up read-only Auth/Storage inventory was completed on 2026-11-15. It reports 3 Supabase Auth users and provider identity counts of 1 `email` and 3 `google` identities (provider counts are identity rows, not distinct users). It found no Storage buckets. The existing `public.profiles` foreign key to `auth.users` and its own-row SELECT/UPDATE policies remain relevant to any account transition; the lead tables have public INSERT policies. The additive Django migrations created new application/framework tables only; no Auth users, profiles, lead rows, RLS policies, or existing tables were modified. Before importing users, inspect account-to-identity/profile mappings through a controlled staging procedure; the aggregate report does not establish which identities belong to which profiles.
 
 ### Deployment status
 
-- A Render Blueprint and a same-origin Vercel API rewrite are prepared. The Blueprint does not run database migrations and requires a private `DATABASE_URL`.
-- Vercel is linked locally to `fleetcast-website-pjcr`; production still has the legacy Supabase environment variables and no production Django API URL. No redeploy has been made.
-- The frontend production build and API rewrite build pass; frontend tests pass (33) and Django tests pass (11) against isolated SQLite.
-- Render service creation, safe Supabase account migration review, Storage bucket setup/policy review, and live Google OAuth verification remain outstanding.
+- Render API is live at `https://fleetcast-django-api.onrender.com`; `/api/v1/health/` returns HTTP 200.
+- Additive Django migrations have been applied to the existing Supabase database; `showmigrations` confirms all applied and `manage.py check` passes.
+- Vercel Production is deployed at `https://fleetcast-website-pjcr.vercel.app` with Django API environment configuration. The production `/api/v1/health/` proxy returns HTTP 200 from Gunicorn.
+- Frontend typecheck and 33 tests pass; production build passes when Google Fonts can be fetched. Django tests previously passed (11) against isolated SQLite.
+- Account import/linking, Storage bucket setup/policy review, Google OAuth live sign-in, and authenticated CRUD workflows remain outstanding.
 
 ## Remaining manual setup
 
-- Connect the GitHub repository to Render, fill the private Render environment values, and verify health before configuring Vercel production API variables.
 - Add the production Vercel callback URI to the Google Web OAuth client and resolve the reported `401 invalid_client` before claiming Google sign-in works.
 - Existing Supabase Auth users and `public.profiles` remain untouched; account migration and password resets still require a separate plan/rehearsal. No Storage buckets exist yet; create suitable buckets and access policies only after confirming the intended public/private behavior.

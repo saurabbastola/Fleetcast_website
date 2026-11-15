@@ -127,7 +127,7 @@ The public Supabase schema was inventoried read-only. It contains `contact_submi
 
 When `DATABASE_URL` is blank, local development uses a fresh `backend/development-local.sqlite3`. The older `backend/development.sqlite3` is left untouched because its built-in migration history predates the custom user model.
 
-Initial Django migrations now create only the new application tables (`accounts_user`, business/driver profiles, vehicles, advertisements, campaigns, payments, and notifications). They contain `CreateModel` operations only and have been verified on a fresh temporary SQLite database. They have **not** been applied to Supabase. The read-only inventory found 3 Supabase Auth users, with identity rows for `email` (1) and `google` (3), and no Storage buckets. The counts do not reveal which provider identities belong to which users; account mapping still needs a controlled staging review. Existing Auth users and `public.profiles` are untouched. The two inventory commands are read-only and refuse the SQLite fallback; `inspect_supabase` does not emit user emails or IDs.
+Initial Django migrations create the new application tables (`accounts_user`, business/driver profiles, vehicles, advertisements, campaigns, payments, and notifications), along with Django's framework tables. They contain only additive table creation/related framework migrations and were applied after the read-only schema/Auth/Storage inventory confirmed no existing domain tables. Existing Supabase Auth users and `public.profiles` were not changed. The inventory found 3 Supabase Auth users, with identity rows for `email` (1) and `google` (3), and no Storage buckets. The counts do not reveal which provider identities belong to which users; account mapping still needs a controlled staging review.
 
 Set up Google as a **Web application** OAuth client in [Google Cloud Console](https://console.cloud.google.com). Add the exact server callback URL from `GOOGLE_REDIRECT_URI` to Authorized redirect URIs (local default: `http://localhost:8000/api/v1/auth/google/callback/`). Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` only in Django's private `.env`. For production use HTTPS, `COOKIE_SECURE=True`, and the exact production frontend/backend origins. Do not place secrets in `NEXT_PUBLIC_` variables.
 
@@ -139,18 +139,16 @@ The backend sends password reset email using Django's configured email backend. 
 
 `supabase/schema.sql` documents the existing public lead/contact tables. Django maps those tables as unmanaged models and handles inserts through its API. `supabase/profiles.sql` is legacy Supabase Auth setup; do not use it to create new application accounts under the Django auth architecture.
 
-## Deploy the Django API to Render
+## Current deployment
 
-The repository includes a `render.yaml` Blueprint for the Django API. It does not create a database or run migrations. Connect this GitHub repository in Render using **New → Blueprint**, review the `fleetcast-django-api` service, and provide the private environment values (especially the existing Supabase `DATABASE_URL`, Google client credentials, Supabase Storage key, and SMTP credentials) in Render. Do not paste secrets into GitHub or chat. The configured health check is `/api/v1/health/` and does not query the database.
+- Django API: `https://fleetcast-django-api.onrender.com` (health endpoint returns HTTP 200).
+- Next.js Production: `https://fleetcast-website-pjcr.vercel.app`.
+- Vercel Production variables are configured as `NEXT_PUBLIC_API_URL=/api/v1`, `DJANGO_API_ORIGIN=https://fleetcast-django-api.onrender.com`, and `DJANGO_API_URL=https://fleetcast-django-api.onrender.com/api/v1`. Browser API requests use the same-origin Vercel rewrite to preserve HttpOnly cookies.
+- The Vercel API proxy health route has been verified through to Django/Gunicorn. Additive Django migrations have been applied to Supabase after read-only schema, Auth, and Storage inspection.
 
-After the service is created, run `python manage.py inspect_database` and `python manage.py inspect_supabase` from the Render Shell and review their metadata-only output. Do not apply migrations against Supabase until existing Auth identities, RLS, storage buckets, and account relationships have been reviewed and compatible mappings are planned. Render auto-deploy is disabled in the Blueprint so the service is deployed only after you configure it.
+The GitHub deployment branch is `codex/render-deployment`. The Render Blueprint does not apply migrations automatically. To deploy a future update, push the desired branch and deploy through Render/Vercel. Keep Google and Supabase credentials in private service environment settings, never in source control or `NEXT_PUBLIC_` variables.
 
-## Deploy the frontend to Vercel
-
-1. Push this folder to a GitHub repo.
-2. In Vercel, choose **Add New → Project** and import the repo. The framework is detected as Next.js.
-3. Set `NEXT_PUBLIC_API_URL` to `/api/v1`, `DJANGO_API_ORIGIN` to the Django service origin (for example `https://fleetcast-django-api.onrender.com`), and `DJANGO_API_URL` to that origin plus `/api/v1`. The Vercel rewrite proxies browser API traffic through the frontend origin for first-party HttpOnly cookies; server-side public form proxies use `DJANGO_API_URL` directly.
-4. Set the Django environment values in Render, then deploy the frontend. Register `https://<your-vercel-domain>/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI and set Django's `FRONTEND_URL` to the same Vercel origin. The Blueprint currently uses `https://fleetcast-website-pjcr.vercel.app`; update it if your production alias differs.
+Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as the Google OAuth authorized redirect URI. Google sign-in still requires resolving the reported `401 invalid_client` and completing a real login before it can be considered working.
 
 ## Project structure
 
@@ -174,4 +172,4 @@ src/
 supabase/schema.sql
 ```
 
-`backend/` contains the modular Django REST Framework API, create-only initial migrations for its new application tables, and a Render Blueprint. Supabase migrations remain unapplied pending inspection of the existing `auth`/`storage` schemas and review of legacy accounts.
+`backend/` contains the modular Django REST Framework API, additive initial migrations for its new application tables, and a Render Blueprint. Those migrations have been applied to Supabase; the existing Auth users and `public.profiles` still need a separate account-linking/import plan.
