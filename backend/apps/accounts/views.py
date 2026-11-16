@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 from django.db import transaction
 from authlib.integrations.requests_client import OAuth2Session
@@ -27,6 +28,7 @@ from .serializers import RegisterSerializer, LoginSerializer, UserSerializer, Ch
 
 ACCESS_COOKIE = "fc_access"
 REFRESH_COOKIE = "fc_refresh"
+oauth_logger = logging.getLogger("apps.accounts.oauth")
 
 def set_tokens(response, refresh):
     common = {"httponly": True, "secure": settings.COOKIE_SECURE, "samesite": settings.COOKIE_SAMESITE, "path": "/"}
@@ -224,6 +226,7 @@ def create_google_oauth_attempt(*, role="", link_user=None):
         role=role,
         link_user=link_user,
     )
+    oauth_logger.info("Google OAuth attempt stored (role=%s, linking=%s)", role or "existing", bool(link_user))
     return state, nonce, verifier
 
 def consume_google_oauth_attempt(state):
@@ -238,6 +241,14 @@ def consume_google_oauth_attempt(state):
         ).first()
         if attempt is None:
             GoogleOAuthAttempt.objects.filter(state_digest=digest).delete()
+            pending = GoogleOAuthAttempt.objects.filter(
+                created_at__gte=GoogleOAuthAttempt.expiry_cutoff()
+            ).count()
+            oauth_logger.warning(
+                "Google OAuth state rejected (state_present=%s, pending_attempts=%s)",
+                bool(state),
+                pending,
+            )
             return None
         result = {
             "nonce": attempt.nonce,
@@ -246,6 +257,7 @@ def consume_google_oauth_attempt(state):
             "link_user_id": str(attempt.link_user_id) if attempt.link_user_id else None,
         }
         attempt.delete()
+        oauth_logger.info("Google OAuth state accepted")
         return result
 
 def find_legacy_google_user(subject, email):
