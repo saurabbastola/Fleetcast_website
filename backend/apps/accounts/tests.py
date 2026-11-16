@@ -62,21 +62,18 @@ class LegacyGoogleIdentityTests(SimpleTestCase):
     GOOGLE_REDIRECT_URI="https://fleetcast.example/api/v1/auth/google/callback/",
 )
 class GoogleOAuthStateTests(APITestCase):
-    @patch("apps.accounts.views.google_client")
-    def test_start_persists_state_server_side_for_proxy_callback(self, mocked_google_client):
-        mocked_google_client.return_value.create_authorization_url.return_value = (
-            "https://accounts.google.com/o/oauth2/v2/auth?state=fake", None
-        )
-
+    def test_start_persists_the_exact_state_sent_to_google(self):
+        from urllib.parse import parse_qs, urlparse
+        import hashlib
         response = self.client.get("/api/v1/auth/google/start/?role=BUSINESS")
 
         self.assertEqual(response.status_code, status.HTTP_302_FOUND)
-        state = mocked_google_client.call_args.args[0]
+        state = parse_qs(urlparse(response["Location"]).query)["state"][0]
         attempt = GoogleOAuthAttempt.objects.get()
         self.assertEqual(attempt.role, User.Role.BUSINESS)
         self.assertIsNone(attempt.link_user)
         self.assertEqual(len(attempt.state_digest), 64)
-        self.assertNotEqual(attempt.state_digest, state)
+        self.assertEqual(attempt.state_digest, hashlib.sha256(state.encode("utf-8")).hexdigest())
 
     @patch("google.oauth2.id_token.verify_oauth2_token")
     @patch("apps.accounts.views.google_client")

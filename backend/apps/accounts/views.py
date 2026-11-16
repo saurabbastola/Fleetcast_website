@@ -297,7 +297,9 @@ class GoogleStartView(APIView):
         if role not in (User.Role.BUSINESS, User.Role.DRIVER): return Response({"error": {"message": "Choose Business or Driver before continuing."}}, status=400)
         if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET or not settings.GOOGLE_REDIRECT_URI: return Response({"error": {"message": "Google sign-in is not configured on the server."}}, status=503)
         state, nonce, verifier = create_google_oauth_attempt(role=role)
-        uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
+        # Authlib does not use OAuth2Session.state when creating the URL; pass
+        # state explicitly so it matches the persisted one-time attempt.
+        uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", state=state, access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
         return HttpResponseRedirect(uri)
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -308,7 +310,7 @@ class GoogleLinkStartView(APIView):
             return Response({"error": {"message": "Google sign-in is not configured on the server."}}, status=503)
         if not request.user.email_verified: return Response({"error": {"message": "Verify your email before linking Google."}}, status=403)
         state, nonce, verifier = create_google_oauth_attempt(link_user=request.user)
-        uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
+        uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", state=state, access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
         return Response({"authorization_url": uri})
 
 class GoogleCallbackView(APIView):
