@@ -1,6 +1,8 @@
 import uuid
+from datetime import timedelta
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.utils import timezone
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
@@ -35,3 +37,19 @@ class User(AbstractUser):
     def save(self, *args, **kwargs):
         if not self.username: self.username = self.email
         super().save(*args, **kwargs)
+
+
+class GoogleOAuthAttempt(models.Model):
+    """Short-lived server-side OAuth state, independent of browser session cookies."""
+    state_digest = models.CharField(max_length=64, primary_key=True)
+    nonce = models.CharField(max_length=128)
+    code_verifier = models.CharField(max_length=128)
+    role = models.CharField(max_length=12, blank=True)
+    link_user = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    @classmethod
+    def expiry_cutoff(cls):
+        return timezone.now() - timedelta(minutes=10)

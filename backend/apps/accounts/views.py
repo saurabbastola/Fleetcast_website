@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from django.db import transaction
 from authlib.integrations.requests_client import OAuth2Session
@@ -9,6 +10,7 @@ from django.core.mail import send_mail
 from django.core import signing
 from django.http import JsonResponse, HttpResponseRedirect
 from django.middleware.csrf import get_token
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -20,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User
+from .models import GoogleOAuthAttempt, User
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer, ChangePasswordSerializer
 
 ACCESS_COOKIE = "fc_access"
@@ -209,6 +211,43 @@ class AdminDashboardView(APIView):
 def google_client(state=None):
     return OAuth2Session(settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET, scope="openid email profile", redirect_uri=settings.GOOGLE_REDIRECT_URI, state=state, code_challenge_method="S256")
 
+def create_google_oauth_attempt(*, role="", link_user=None):
+    """Persist one-time OAuth state so Vercel proxy cookie behavior cannot lose it."""
+    GoogleOAuthAttempt.objects.filter(created_at__lt=GoogleOAuthAttempt.expiry_cutoff()).delete()
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    GoogleOAuthAttempt.objects.create(
+        state_digest=hashlib.sha256(state.encode("utf-8")).hexdigest(),
+        nonce=nonce,
+        code_verifier=verifier,
+        role=role,
+        link_user=link_user,
+    )
+    return state, nonce, verifier
+
+def consume_google_oauth_attempt(state):
+    """Validate and consume a single-use, short-lived OAuth attempt."""
+    if not state:
+        return None
+    digest = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    with transaction.atomic():
+        attempt = GoogleOAuthAttempt.objects.select_for_update().filter(
+            state_digest=digest,
+            created_at__gte=GoogleOAuthAttempt.expiry_cutoff(),
+        ).first()
+        if attempt is None:
+            GoogleOAuthAttempt.objects.filter(state_digest=digest).delete()
+            return None
+        result = {
+            "nonce": attempt.nonce,
+            "verifier": attempt.code_verifier,
+            "role": attempt.role,
+            "link_user_id": str(attempt.link_user_id) if attempt.link_user_id else None,
+        }
+        attempt.delete()
+        return result
+
 def find_legacy_google_user(subject, email):
     """Return (legacy UUID, email already belongs to Supabase) without email-only linking."""
     if connection.vendor != "postgresql":
@@ -245,8 +284,7 @@ class GoogleStartView(APIView):
         role = request.query_params.get("role", "")
         if role not in (User.Role.BUSINESS, User.Role.DRIVER): return Response({"error": {"message": "Choose Business or Driver before continuing."}}, status=400)
         if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET or not settings.GOOGLE_REDIRECT_URI: return Response({"error": {"message": "Google sign-in is not configured on the server."}}, status=503)
-        state = secrets.token_urlsafe(32); nonce = secrets.token_urlsafe(32); verifier = secrets.token_urlsafe(64)
-        request.session["google_oauth_state"] = state; request.session["google_oauth_nonce"] = nonce; request.session["google_oauth_verifier"] = verifier; request.session["google_signup_role"] = role
+        state, nonce, verifier = create_google_oauth_attempt(role=role)
         uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
         return HttpResponseRedirect(uri)
 
@@ -257,9 +295,7 @@ class GoogleLinkStartView(APIView):
         if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET or not settings.GOOGLE_REDIRECT_URI:
             return Response({"error": {"message": "Google sign-in is not configured on the server."}}, status=503)
         if not request.user.email_verified: return Response({"error": {"message": "Verify your email before linking Google."}}, status=403)
-        state = secrets.token_urlsafe(32); nonce = secrets.token_urlsafe(32); verifier = secrets.token_urlsafe(64)
-        request.session["google_oauth_state"] = state; request.session["google_oauth_nonce"] = nonce
-        request.session["google_oauth_verifier"] = verifier; request.session["google_link_user_id"] = str(request.user.pk)
+        state, nonce, verifier = create_google_oauth_attempt(link_user=request.user)
         uri, _ = google_client(state).create_authorization_url("https://accounts.google.com/o/oauth2/v2/auth", access_type="online", prompt="select_account", nonce=nonce, code_verifier=verifier)
         return Response({"authorization_url": uri})
 
@@ -267,9 +303,11 @@ class GoogleCallbackView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
     def get(self, request):
-        state = request.session.pop("google_oauth_state", None); nonce = request.session.pop("google_oauth_nonce", None); verifier = request.session.pop("google_oauth_verifier", None); role = request.session.pop("google_signup_role", None); link_user_id = request.session.pop("google_link_user_id", None)
-        if not state or not secrets.compare_digest(state, request.query_params.get("state", "")):
+        state = request.query_params.get("state", "")
+        attempt = consume_google_oauth_attempt(state)
+        if not attempt:
             return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=oauth_state")
+        nonce = attempt["nonce"]; verifier = attempt["verifier"]; role = attempt["role"]; link_user_id = attempt["link_user_id"]
         try:
             client = google_client(state); token = client.fetch_token("https://oauth2.googleapis.com/token", code=request.query_params.get("code"), grant_type="authorization_code", code_verifier=verifier)
             from google.auth.transport.requests import Request as GoogleRequest

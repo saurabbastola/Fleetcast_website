@@ -1,14 +1,16 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from datetime import datetime, timezone
+from datetime import timedelta
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 from django.test import SimpleTestCase, override_settings
+from django.utils import timezone as django_timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.core import signing
 from django.core import mail
-from .models import User
+from .models import GoogleOAuthAttempt, User
 from apps.businesses.models import BusinessProfile
 from apps.drivers.models import DriverProfile
 from apps.campaigns.models import Campaign
@@ -52,6 +54,74 @@ class LegacyGoogleIdentityTests(SimpleTestCase):
         connection.vendor = "sqlite"
         self.assertEqual(find_legacy_google_user("google-subject", "verified@example.com"), (None, False))
         connection.cursor.assert_not_called()
+
+
+@override_settings(
+    GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET="test-secret",
+    GOOGLE_REDIRECT_URI="https://fleetcast.example/api/v1/auth/google/callback/",
+)
+class GoogleOAuthStateTests(APITestCase):
+    @patch("apps.accounts.views.google_client")
+    def test_start_persists_state_server_side_for_proxy_callback(self, mocked_google_client):
+        mocked_google_client.return_value.create_authorization_url.return_value = (
+            "https://accounts.google.com/o/oauth2/v2/auth?state=fake", None
+        )
+
+        response = self.client.get("/api/v1/auth/google/start/?role=BUSINESS")
+
+        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+        state = mocked_google_client.call_args.args[0]
+        attempt = GoogleOAuthAttempt.objects.get()
+        self.assertEqual(attempt.role, User.Role.BUSINESS)
+        self.assertIsNone(attempt.link_user)
+        self.assertEqual(len(attempt.state_digest), 64)
+        self.assertNotEqual(attempt.state_digest, state)
+
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    @patch("apps.accounts.views.google_client")
+    def test_callback_completes_without_a_browser_session_cookie(self, mocked_google_client, verify_token):
+        from django.test import override_settings
+
+        mocked_google_client.return_value.create_authorization_url.return_value = (
+            "https://accounts.google.com/o/oauth2/v2/auth", None
+        )
+        mocked_google_client.return_value.fetch_token.return_value = {"id_token": "signed-id-token"}
+        start = self.client.get("/api/v1/auth/google/start/?role=BUSINESS")
+        state = mocked_google_client.call_args.args[0]
+        attempt = GoogleOAuthAttempt.objects.get()
+        verify_token.return_value = {
+            "nonce": attempt.nonce,
+            "email_verified": True,
+            "sub": "google-subject-123",
+            "email": "google-new@example.com",
+            "given_name": "Google",
+            "family_name": "User",
+        }
+        self.assertEqual(start.status_code, status.HTTP_302_FOUND)
+        self.client.cookies.clear()
+
+        with override_settings(FRONTEND_URL="https://fleetcast.example"):
+            response = self.client.get("/api/v1/auth/google/callback/", {"state": state, "code": "temporary-code"})
+
+        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+        self.assertEqual(response["Location"], "https://fleetcast.example/auth/callback")
+        self.assertIn("fc_access", response.cookies)
+        user = User.objects.get(email="google-new@example.com")
+        self.assertEqual(user.role, User.Role.BUSINESS)
+        self.assertFalse(GoogleOAuthAttempt.objects.exists())
+
+    def test_state_is_single_use_and_rejects_expired_attempts(self):
+        from .views import create_google_oauth_attempt, consume_google_oauth_attempt
+
+        state, nonce, verifier = create_google_oauth_attempt(role=User.Role.DRIVER)
+        first = consume_google_oauth_attempt(state)
+        self.assertEqual(first, {"nonce": nonce, "verifier": verifier, "role": User.Role.DRIVER, "link_user_id": None})
+        self.assertIsNone(consume_google_oauth_attempt(state))
+
+        expired_state, _, _ = create_google_oauth_attempt(role=User.Role.BUSINESS)
+        GoogleOAuthAttempt.objects.filter().update(created_at=django_timezone.now() - timedelta(minutes=11))
+        self.assertIsNone(consume_google_oauth_attempt(expired_state))
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AuthenticationApiTests(APITestCase):
