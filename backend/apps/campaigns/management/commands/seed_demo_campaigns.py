@@ -68,8 +68,18 @@ class Command(BaseCommand):
                     if exc.code != 409:
                         raise
             self.stdout.write("Private upload buckets are ready; existing bucket settings were left unchanged.")
-        except (HTTPError, URLError, TimeoutError, ValueError, KeyError) as exc:
-            raise CommandError("Could not prepare private Supabase Storage buckets for the demo campaign creatives.") from exc
+        except HTTPError as exc:
+            if exc.code in (401, 403):
+                reason = f"Supabase Storage rejected the server credentials (HTTP {exc.code}); check that Render has the correct project URL and service-role key."
+            elif exc.code == 404:
+                reason = f"Supabase Storage returned HTTP 404; check that SUPABASE_URL is the project API URL, not the dashboard URL."
+            else:
+                reason = f"Supabase Storage returned HTTP {exc.code} while preparing private upload buckets."
+            raise CommandError(reason) from exc
+        except URLError as exc:
+            raise CommandError("Could not reach the Supabase Storage API; check the Render SUPABASE_URL and project availability.") from exc
+        except (TimeoutError, ValueError, KeyError) as exc:
+            raise CommandError(f"Supabase Storage returned an invalid or incomplete response ({type(exc).__name__}).") from exc
 
     @transaction.atomic
     def handle(self, *args, **options):
