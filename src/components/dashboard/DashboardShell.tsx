@@ -33,7 +33,7 @@ function NavIcon({ name }: { name: DashNavItem["icon"] }) {
 
 function navFor(role: string): DashNavItem[] {
   if (role === "DRIVER") return [
-    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
+    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Campaigns",href:"/dashboard/campaigns",icon:"megaphone"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
     {label:"Profile",href:"/dashboard/profile",icon:"gear"},{label:"Notifications",href:"/dashboard/notifications",icon:"chart"},
     {label:"Earnings",href:"/dashboard/earnings",icon:"chart"},{label:"Settings",href:"/dashboard/settings",icon:"gear"},
   ];
@@ -66,7 +66,8 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     // Only a missing/expired session goes to /login; "Sign out" takes people home instead.
     if (session.status === "signedOut" && !session.byUser) router.replace("/login");
     if (account && pathname.startsWith("/dashboard/admin") && account.role !== "ADMIN") router.replace("/dashboard");
-    if (account && ["/dashboard/campaigns", "/dashboard/advertisements", "/dashboard/payments"].some((p) => pathname.startsWith(p)) && account.role !== "BUSINESS") router.replace("/dashboard");
+    if (account && ["/dashboard/advertisements", "/dashboard/payments"].some((p) => pathname.startsWith(p)) && account.role !== "BUSINESS") router.replace("/dashboard");
+    if (account && pathname.startsWith("/dashboard/campaigns") && !["BUSINESS", "DRIVER"].includes(account.role)) router.replace("/dashboard");
     if (account && ["/dashboard/vehicles", "/dashboard/earnings"].some((p) => pathname.startsWith(p)) && account.role !== "DRIVER") router.replace("/dashboard");
   }, [session, router, account, pathname]);
 

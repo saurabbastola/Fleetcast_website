@@ -17,7 +17,23 @@ class DriverDashboardView(APIView):
     permission_classes = [IsAuthenticated, IsDriverRole]
     def get(self, request):
         vehicles = Vehicle.objects.filter(driver=request.user)
-        return Response({"vehicles": vehicles.count(), "pending_vehicles": vehicles.filter(status="PENDING").count(), "approved_vehicles": vehicles.filter(status="APPROVED").count(), "earnings": None, "assigned_advertisements": None})
+        from apps.campaigns.models import BroadcastSession, CampaignParticipation
+        from apps.campaigns.serializers import ParticipationSerializer
+        from decimal import Decimal
+        participations = CampaignParticipation.objects.filter(driver=request.user).exclude(status=CampaignParticipation.Status.WITHDRAWN).select_related("campaign__business__business_profile", "campaign__advertisement").prefetch_related("broadcast_sessions")
+        sessions = list(BroadcastSession.objects.filter(participation__driver=request.user).select_related("participation__campaign"))
+        hours = round(sum(item.hours for item in sessions), 2)
+        impressions = [item.impressions for item in sessions if item.impressions is not None]
+        earnings = round(sum((Decimal(str(item.hours)) * item.participation.campaign.compensation_rate for item in sessions), Decimal("0")), 2) if sessions else None
+        evidence = "DEMO" if any(item.measurement_status == BroadcastSession.MeasurementStatus.DEMO for item in sessions) else "ESTIMATED" if sessions else "UNAVAILABLE"
+        current = participations.filter(is_current=True).first()
+        return Response({
+            "vehicles": vehicles.count(), "pending_vehicles": vehicles.filter(status="PENDING").count(), "approved_vehicles": vehicles.filter(status="APPROVED").count(),
+            "campaigns": participations.filter(status__in=[CampaignParticipation.Status.ACCEPTED, CampaignParticipation.Status.ACTIVE]).count(),
+            "broadcast_hours": hours if sessions else None, "impressions": sum(impressions) if impressions else None,
+            "earnings": earnings, "measurement_status": evidence,
+            "current_advertisement": ParticipationSerializer(current).data if current else None,
+        })
 
 class AdminDriverList(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
