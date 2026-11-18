@@ -11,6 +11,7 @@ from apps.businesses.models import BusinessProfile
 from apps.drivers.models import DriverProfile
 from apps.advertisements.models import Advertisement
 from apps.notifications.models import Notification
+from apps.vehicles.models import Vehicle
 from .models import BroadcastSession, Campaign, CampaignParticipation
 
 
@@ -112,6 +113,43 @@ class CampaignParticipationWorkflowTests(APITestCase):
         self.assertEqual(session["measurement_status"], "ESTIMATED")
         self.assertEqual(session["hours"], 1.0)
         self.assertIn("T", session["started_at"])
+
+    def test_driver_can_try_demo_campaign_and_assign_pending_vehicle(self):
+        # Demo workflow intentionally works before driver and vehicle verification.
+        DriverProfile.objects.filter(user=self.driver).update(verification_status=DriverProfile.Verification.PENDING)
+        vehicle = Vehicle.objects.create(
+            driver=self.driver, registration_number="DEMO-123", vehicle_model="Sample Sedan",
+            vehicle_type="Car", status=Vehicle.Status.PENDING,
+        )
+        self.auth(self.driver)
+        call_command("seed_demo_campaigns", skip_assets=True, verbosity=0)
+        enrolled = self.client.post("/api/v1/driver/campaigns/demo/", {}, format="json")
+        self.assertEqual(enrolled.status_code, status.HTTP_200_OK)
+        self.assertTrue(enrolled.data)
+        selected = enrolled.data[0]
+        self.assertTrue(selected["campaign"]["is_demo"])
+        self.assertEqual(selected["status"], CampaignParticipation.Status.ACCEPTED)
+        assigned = self.client.post(
+            f"/api/v1/driver/campaigns/{selected['campaign']['id']}/vehicle/",
+            {"vehicle_id": vehicle.id}, format="json",
+        )
+        self.assertEqual(assigned.status_code, status.HTTP_200_OK)
+        self.assertEqual(assigned.data["vehicle_summary"]["status"], Vehicle.Status.PENDING)
+        foreign_vehicle = Vehicle.objects.create(
+            driver=self.driver_two, registration_number="OTHER-123", vehicle_model="Other Sedan",
+            vehicle_type="Car", status=Vehicle.Status.APPROVED,
+        )
+        denied = self.client.post(
+            f"/api/v1/driver/campaigns/{selected['campaign']['id']}/vehicle/",
+            {"vehicle_id": foreign_vehicle.id}, format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
+        started = self.client.post(
+            f"/api/v1/driver/campaigns/{selected['campaign']['id']}/start_broadcast/", {}, format="json",
+        )
+        self.assertEqual(started.status_code, status.HTTP_201_CREATED)
+        session = BroadcastSession.objects.get(pk=started.data["session_id"])
+        self.assertEqual(session.measurement_status, BroadcastSession.MeasurementStatus.DEMO)
 
     def test_pausing_closes_broadcast_notifies_driver_and_removes_campaign(self):
         participation = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.ACTIVE, is_current=True)

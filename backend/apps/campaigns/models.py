@@ -62,6 +62,7 @@ class CampaignParticipation(models.Model):
 
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="participations")
     driver = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="campaign_participations", limit_choices_to={"role": "DRIVER"})
+    vehicle = models.ForeignKey("vehicles.Vehicle", null=True, blank=True, on_delete=models.SET_NULL, related_name="campaign_participations")
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.APPLIED, db_index=True)
     is_current = models.BooleanField(default=False, db_index=True)
     applied_at = models.DateTimeField(auto_now_add=True)

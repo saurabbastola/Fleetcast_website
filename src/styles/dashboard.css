@@ -315,6 +315,7 @@ a.dash__link:hover {
   margin-top: 6px;
   color: var(--dash-muted);
 }
+.driver-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .dview__sample {
   flex: none;
   padding: 6px 12px;
@@ -830,6 +831,10 @@ a.dash__link:hover {
 .driver-current__body img { width: 144px; height: 88px; border-radius: 8px; object-fit: cover; }
 .driver-current__body div { display: grid; gap: 5px; }
 .driver-live { color: #187047 !important; font-weight: 700; }
+.dtable td select { max-width:220px; min-height:36px; padding:6px 28px 6px 9px; border:1px solid var(--dash-line); border-radius:7px; background:#fff; color:var(--navy); font:inherit; font-size:13px; }
+.dtable td small { display:block; margin-top:4px; color:var(--dash-muted); font-size:11px; white-space:normal; }
+.field-error { color:#8f1d18 !important; }
+.inline-retry { margin-left:5px; color:var(--navy); font-weight:700; text-decoration:underline; }
 .participants-row > td { padding: 14px; background: #f8fafc; }
 .participants-row .dtable { min-width: 760px; }
 .driver-history { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
@@ -837,6 +842,8 @@ a.dash__link:hover {
 .driver-history li:last-child { border-bottom: 0; }
 .driver-history span { color: var(--dash-muted, #5b6272); font-size: 14px; }
 @media (max-width: 620px) {
+  .driver-actions { width:100%; }
+  .driver-actions > * { flex:1 1 auto; text-align:center; }
   .driver-current__body { align-items: flex-start; }
   .driver-current__body img { width: 86px; height: 76px; }
   .driver-campaign { padding: 14px; }

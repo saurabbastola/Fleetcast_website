@@ -16,6 +16,7 @@ export type CampaignParticipation = {
   impressions: number | null; estimated_earnings: string; measurement_status: "DEMO" | "ESTIMATED" | "VERIFIED" | "UNAVAILABLE";
   open_session: {id:number;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:string}|null;
   broadcast_sessions: {id:number;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:"DEMO"|"ESTIMATED"|"VERIFIED"}[];
+  vehicle: number | null; vehicle_summary: {id:number;registration_number:string;vehicle_model:string;vehicle_type:string;status:string}|null;
 };
 export type Page<T> = {count: number; next: string | null; previous: string | null; results: T[]};
 export const campaignApi = {
@@ -28,6 +29,8 @@ export const campaignApi = {
 export const driverCampaignApi = {
   available: (query = "") => api<Campaign[]>(`/driver/campaigns/${query}`),
   mine: () => api<CampaignParticipation[]>("/driver/campaigns/mine/"),
+  demo: () => api<CampaignParticipation[]>("/driver/campaigns/demo/", {method:"POST", body:"{}"}),
+  assignVehicle: (id: Campaign["id"], vehicleId: number | null) => api<CampaignParticipation>(`/driver/campaigns/${id}/vehicle/`, {method:"POST", body:JSON.stringify({vehicle_id:vehicleId})}),
   apply: (id: Campaign["id"]) => api<CampaignParticipation>(`/driver/campaigns/${id}/apply/`, {method:"POST", body:"{}"}),
   switchTo: (id: Campaign["id"]) => api<CampaignParticipation>(`/driver/campaigns/${id}/switch/`, {method:"POST", body:"{}"}),
   startBroadcast: (id: Campaign["id"]) => api<{participation:CampaignParticipation;session_id:number}>(`/driver/campaigns/${id}/start_broadcast/`, {method:"POST", body:"{}"}),

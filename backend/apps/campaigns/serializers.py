@@ -91,9 +91,10 @@ class ParticipationSerializer(serializers.ModelSerializer):
     measurement_status = serializers.SerializerMethodField()
     open_session = serializers.SerializerMethodField()
     broadcast_sessions = serializers.SerializerMethodField()
+    vehicle_summary = serializers.SerializerMethodField()
     class Meta:
         model = CampaignParticipation
-        fields = ["id", "campaign", "driver_id", "driver_name", "driver_email", "status", "is_current", "applied_at", "updated_at", "hours", "impressions", "estimated_earnings", "measurement_status", "open_session", "broadcast_sessions"]
+        fields = ["id", "campaign", "driver_id", "driver_name", "driver_email", "status", "is_current", "applied_at", "updated_at", "hours", "impressions", "estimated_earnings", "measurement_status", "open_session", "broadcast_sessions", "vehicle", "vehicle_summary"]
         read_only_fields = fields
     def get_driver_name(self, obj):
         return obj.driver.get_full_name() or obj.driver.email.split("@", 1)[0]
@@ -117,3 +118,7 @@ class ParticipationSerializer(serializers.ModelSerializer):
         return BroadcastSessionSerializer(session).data if session else None
     def get_broadcast_sessions(self, obj):
         return BroadcastSessionSerializer(self._sessions(obj), many=True).data
+    def get_vehicle_summary(self, obj):
+        vehicle = obj.vehicle
+        if not vehicle: return None
+        return {"id": vehicle.id, "registration_number": vehicle.registration_number, "vehicle_model": vehicle.vehicle_model, "vehicle_type": vehicle.vehicle_type, "status": vehicle.status}
