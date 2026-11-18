@@ -6,6 +6,7 @@ from authlib.integrations.requests_client import OAuth2Session
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import connection
 from django.core.mail import send_mail
 from django.core import signing
@@ -18,13 +19,15 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import GoogleOAuthAttempt, User
+from .models import GoogleOAuthAttempt, User, UserWorkspace
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer, ChangePasswordSerializer
+from .workspaces import ensure_workspace
 
 ACCESS_COOKIE = "fc_access"
 REFRESH_COOKIE = "fc_refresh"
@@ -35,6 +38,12 @@ def set_tokens(response, refresh):
     response.set_cookie(ACCESS_COOKIE, str(refresh.access_token), max_age=600, **common)
     response.set_cookie(REFRESH_COOKIE, str(refresh), max_age=7 * 86400, **common)
     return response
+
+def make_refresh_token(user, role=None):
+    role = role or user.role
+    refresh = RefreshToken.for_user(user)
+    refresh["active_role"] = role
+    return refresh
 
 def clear_tokens(response):
     for name in (ACCESS_COOKIE, REFRESH_COOKIE):
@@ -74,7 +83,9 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request}); serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
-        return set_tokens(Response({"user": UserSerializer(user).data}), RefreshToken.for_user(user))
+        role = serializer.validated_data["active_role"]
+        user.active_role = role
+        return set_tokens(Response({"user": UserSerializer(user, context={"active_role": role}).data}), make_refresh_token(user, role))
 
 @method_decorator(csrf_protect, name="dispatch")
 class RefreshView(APIView):
@@ -85,11 +96,15 @@ class RefreshView(APIView):
         if not raw: return clear_tokens(Response({"error": {"message": "Session expired. Please sign in again."}}, status=401))
         try:
             refresh = RefreshToken(raw); user = get_user_model().objects.get(pk=refresh["user_id"], is_active=True)
+            role = refresh.get("active_role") or user.role
+            if not UserWorkspace.objects.filter(user=user, role=role).exists():
+                raise TokenError("The workspace is no longer enabled for this account.")
+            user.active_role = role
             if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
                 try: refresh.blacklist()
                 except AttributeError: pass
-                refresh = RefreshToken.for_user(user)
-            response = Response({"user": UserSerializer(user).data})
+                refresh = make_refresh_token(user, role)
+            response = Response({"user": UserSerializer(user, context={"active_role": role}).data})
             return set_tokens(response, refresh)
         except Exception:
             return clear_tokens(Response({"error": {"message": "Session expired. Please sign in again."}}, status=401))
@@ -107,9 +122,29 @@ class LogoutView(APIView):
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
-    def get(self, request): return Response(UserSerializer(request.user).data)
+    def get(self, request): return Response(UserSerializer(request.user, context={"request": request}).data)
     def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data)
+        serializer = UserSerializer(request.user, data=request.data, partial=True, context={"request": request}); serializer.is_valid(raise_exception=True); serializer.save(); return Response(serializer.data)
+
+@method_decorator(csrf_protect, name="dispatch")
+class WorkspaceView(APIView):
+    """Add or switch the current user between their Business and Driver workspaces."""
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        if request.user.role == User.Role.ADMIN or not request.user.email_verified:
+            raise DRFValidationError("Administrators cannot add public workspaces, and accounts must be verified.")
+        role = request.data.get("role")
+        if role not in (User.Role.BUSINESS, User.Role.DRIVER):
+            raise DRFValidationError({"role": "Choose Business / Advertiser or Vehicle Owner / Driver."})
+        if role == User.Role.BUSINESS and not request.user.workspaces.filter(role=role).exists() and not str(request.data.get("company_name", "")).strip():
+            raise DRFValidationError({"company_name": "Company name is required to add a Business workspace."})
+        try:
+            ensure_workspace(request.user, role, company_name=str(request.data.get("company_name", "")))
+        except DjangoValidationError as exc:
+            raise DRFValidationError(getattr(exc, "message_dict", exc.messages)) from exc
+        request.user.active_role = role
+        response = Response({"user": UserSerializer(request.user, context={"request": request}).data})
+        return set_tokens(response, make_refresh_token(request.user, role))
 
 @method_decorator(csrf_protect, name="dispatch")
 class ChangePasswordView(APIView):
@@ -166,7 +201,7 @@ class VerifyEmailView(APIView):
         if user.email_verified: return Response({"error": {"message": "This email has already been verified. Please sign in."}}, status=400)
         user.is_active = True; user.email_verified = True; user.save(update_fields=["is_active", "email_verified", "updated_at"])
         response = Response({"user": UserSerializer(user).data})
-        return set_tokens(response, RefreshToken.for_user(user))
+        return set_tokens(response, make_refresh_token(user, user.role))
 
 class ResendVerificationView(APIView):
     authentication_classes = []
@@ -191,7 +226,7 @@ class AdminUserList(APIView):
         if not IsAdminRole().has_permission(request, self): return Response({"error": {"message": "Administrator access required."}}, status=403)
         qs = User.objects.all().order_by("-created_at")
         role = request.query_params.get("role")
-        if role in User.Role.values: qs = qs.filter(role=role)
+        if role in User.Role.values: qs = qs.filter(workspaces__role=role).distinct()
         term = request.query_params.get("search")
         if term: qs = qs.filter(email__icontains=term)
         from django.core.paginator import Paginator
@@ -336,12 +371,10 @@ class GoogleCallbackView(APIView):
                 if User.objects.filter(provider_subject=claims["sub"]).exclude(pk=target.pk).exists(): return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=identity_already_linked")
                 if target.provider_subject and target.provider_subject != claims["sub"]: return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=identity_already_linked")
                 target.provider_subject = claims["sub"]; target.email_verified = True; target.save(update_fields=["provider_subject", "email_verified", "updated_at"])
-                return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback?linked=1"), RefreshToken.for_user(target))
+                return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback?linked=1"), make_refresh_token(target, target.role))
             user = User.objects.filter(provider_subject=claims["sub"]).first()
             if user is None:
                 if role not in (User.Role.BUSINESS, User.Role.DRIVER): return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=role_required")
-                from apps.businesses.models import BusinessProfile
-                from apps.drivers.models import DriverProfile
                 legacy_user_id, legacy_email_exists = find_legacy_google_user(claims["sub"], claims["email"])
                 if legacy_email_exists and not legacy_user_id:
                     return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
@@ -351,6 +384,8 @@ class GoogleCallbackView(APIView):
                 with transaction.atomic():
                     user = legacy_user
                     if user:
+                        if user.role == User.Role.ADMIN:
+                            return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
                         if user.email.lower() != claims["email"].lower() or (user.provider_subject and user.provider_subject != claims["sub"]):
                             return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
                         user.provider_subject = claims["sub"]
@@ -358,10 +393,17 @@ class GoogleCallbackView(APIView):
                         user.save(update_fields=["provider_subject", "email_verified", "updated_at"])
                     else:
                         user = User.objects.create_user(email=claims["email"], password=None, first_name=claims.get("given_name", ""), last_name=claims.get("family_name", ""), role=role, auth_provider="google", provider_subject=claims["sub"], legacy_supabase_user_id=legacy_user_id, is_active=True, email_verified=True)
-                        if role == User.Role.BUSINESS: BusinessProfile.objects.create(user=user, company_name="")
-                        else: DriverProfile.objects.create(user=user)
+                    if user.role == User.Role.ADMIN:
+                        return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
+                    ensure_workspace(user, role)
+            elif user.role != User.Role.ADMIN:
+                # The verified Google subject has authenticated this same person. They may
+                # provision their second workspace without creating another user/email.
+                ensure_workspace(user, role)
             if not user.is_active: return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=inactive")
             if not user.email_verified: return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=unverified")
-            return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback"), RefreshToken.for_user(user))
+            if user.role == User.Role.ADMIN:
+                return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=account_link_required")
+            return set_tokens(HttpResponseRedirect(f"{settings.FRONTEND_URL}/auth/callback"), make_refresh_token(user, role))
         except Exception:
             return HttpResponseRedirect(f"{settings.FRONTEND_URL}/login?auth_error=google_failed")

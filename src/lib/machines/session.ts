@@ -19,6 +19,7 @@ export type Account = {
   avatarUrl: string | null;
   provider: string;
   role: "ADMIN" | "BUSINESS" | "DRIVER";
+  roles: Array<"ADMIN" | "BUSINESS" | "DRIVER">;
 };
 
 export type SessionState =
@@ -30,7 +31,7 @@ export type SessionEvent = { type: "RESOLVED"; account: Account | null; byUser?:
 export const sessionLoading: SessionState = { status: "loading" };
 
 const same = (a: Account, b: Account) =>
-  a.id === b.id && a.email === b.email && a.name === b.name && a.avatarUrl === b.avatarUrl && a.provider === b.provider && a.role === b.role;
+  a.id === b.id && a.email === b.email && a.name === b.name && a.avatarUrl === b.avatarUrl && a.provider === b.provider && a.role === b.role && a.roles.join(",") === b.roles.join(",");
 
 export function sessionReducer(s: SessionState, e: SessionEvent): SessionState {
   if (!e.account) {
@@ -52,6 +53,7 @@ type UserLike = {
   avatar_url?: string | null;
   auth_provider?: string | null;
   role?: Account["role"];
+  roles?: Account["role"][];
 };
 
 export function toAccount(user: UserLike | null | undefined): Account | null {
@@ -67,6 +69,7 @@ export function toAccount(user: UserLike | null | undefined): Account | null {
     avatarUrl: str(user.avatar_url),
     provider: str(user.auth_provider) ?? "password",
     role: user.role ?? "BUSINESS",
+    roles: user.roles?.length ? user.roles : [user.role ?? "BUSINESS"],
   };
 }
 

@@ -9,7 +9,9 @@ class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email: raise ValueError("An email address is required")
         user = self.model(email=self.normalize_email(email).strip().lower(), **extra_fields)
-        user.set_password(password); user.save(using=self._db); return user
+        user.set_password(password); user.save(using=self._db)
+        UserWorkspace.objects.get_or_create(user=user, role=user.role)
+        return user
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("role", User.Role.ADMIN); extra_fields.setdefault("is_staff", True); extra_fields.setdefault("is_superuser", True); extra_fields.setdefault("email_verified", True)
         if extra_fields.get("is_staff") is not True or extra_fields.get("is_superuser") is not True: raise ValueError("Superusers require staff and superuser flags")
@@ -53,3 +55,17 @@ class GoogleOAuthAttempt(models.Model):
     @classmethod
     def expiry_cutoff(cls):
         return timezone.now() - timedelta(minutes=10)
+
+
+class UserWorkspace(models.Model):
+    """A role membership for a single login identity; role data lives in its profile table."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workspaces")
+    role = models.CharField(max_length=12, choices=User.Role.choices, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "role"], name="unique_user_workspace_role")]
+        ordering = ["role"]
+
+    def __str__(self):
+        return f"{self.user.email}: {self.role}"

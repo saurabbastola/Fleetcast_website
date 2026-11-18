@@ -19,7 +19,7 @@ export default function LoginCard({ portal, portalKey }: { portal: string; porta
     event.preventDefault(); setError(""); setNotice("");
     if (step === "email") { if (!EMAIL.test(email.trim())) return setError("Please enter a valid email address."); setStep("password"); return; }
     setBusy("login");
-    try { const result = await login(email.trim(), password); window.dispatchEvent(new Event("fleetcast-auth-changed")); router.replace(dashboardPath(result.user.role)); }
+    try { const result = await login(email.trim(), password, role); window.dispatchEvent(new Event("fleetcast-auth-changed")); router.replace(dashboardPath(result.user.role)); }
     catch (err) { setError(err instanceof ApiError ? err.message : "We couldn't sign you in. Check your connection and try again."); }
     finally { setBusy(""); }
   };

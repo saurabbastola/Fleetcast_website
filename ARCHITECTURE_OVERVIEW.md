@@ -55,18 +55,18 @@ Browser JavaScript does not receive access/refresh tokens or Supabase service cr
 
 ## 4. Authentication and account roles
 
-All application roles use the Django custom `accounts.User` model. Supported roles are `ADMIN`, `BUSINESS`, and `DRIVER`. Public registration accepts Business and Driver only; administrator access is provisioned by trusted administrative setup.
+All roles use one Django `accounts.User` per email. `accounts.UserWorkspace` stores the user's enabled roles, with a unique `(user, role)` constraint. One user can therefore have both Business and Driver workspaces without duplicate emails or passwords. Each workspace keeps its own one-to-one `BusinessProfile` or `DriverProfile`; the JWT carries the selected active role, and Django checks that membership before authorizing role-specific APIs. Public registration accepts Business and Driver only; administrator access is provisioned by trusted administrative setup. Migration `accounts.0003_userworkspace` backfills each existing user's current role without rewriting user records.
 
 ### Email and password
 
 - Registration validates account fields, hashes the password with Django, and sends an email verification link.
-- Login checks credentials and account status, then places short-lived access and refresh JWTs in secure HttpOnly cookies.
+- Login checks credentials and the requested enabled workspace, then places short-lived access and refresh JWTs with that active role in secure HttpOnly cookies. Users add another workspace while authenticated in Settings and can switch among enabled workspaces from the dashboard top bar; each selection is checked by Django before tokens are issued.
 - Profile, password change, forgot-password, reset-password, email verification, logout, and refresh endpoints are provided by the accounts app.
 - Refresh tokens are rotated and blacklisted after use. Mutating cookie-authenticated requests use CSRF protection.
 
 ### Google sign-in
 
-The browser begins at Django's Google start endpoint. Django creates a short-lived, one-use OAuth attempt, redirects to Google using the authorization-code flow and PKCE, validates the returned state and nonce, verifies Google's ID token and verified email, then finds or creates the Fleetcast account. New users choose Business or Driver before the flow; Google does not grant Admin access. Django issues the Fleetcast cookie session and sends the browser to the frontend callback, which routes the authenticated user to the correct dashboard.
+The browser begins at Django's Google start endpoint. Django creates a short-lived, one-use OAuth attempt, redirects to Google using the authorization-code flow and PKCE, validates the returned state and nonce, verifies Google's ID token and verified email, then finds or creates the one Fleetcast account. The selected Business or Driver workspace is added to that verified identity if needed; Google does not grant Admin access. Django issues the Fleetcast cookie session for the selected workspace and sends the browser to the frontend callback, which routes the authenticated user to the correct dashboard.
 
 The production callback, Render deployment, and real sign-in flow have been verified. Existing Supabase Auth users are not deleted; a verified Google identity can be transitioned to a Django account under the explicit role-selection and identity-matching rules.
 
@@ -104,6 +104,7 @@ erDiagram
     CAMPAIGN ||--o{ CAMPAIGN_PARTICIPATION : offers
     USER ||--o{ CAMPAIGN_PARTICIPATION : driver
     CAMPAIGN_PARTICIPATION ||--o{ BROADCAST_SESSION : tracks
+    USER ||--o{ USER_WORKSPACE : enables
 ```
 
 `User` is the shared identity record. Business and driver profiles are one-to-one with their user. Vehicles belong to a driver; advertisements, campaigns, and payments belong to a business; notifications belong to a user. A `CampaignParticipation` joins one driver to one campaign with a unique constraint; only one participation can be current per driver. `BroadcastSession` records driver-entered start/stop times and labels measurements as DEMO, ESTIMATED, or VERIFIED. Database constraints and serializer validation cover unique vehicle registration, nonnegative values, campaign date order, and valid session times.

@@ -13,6 +13,11 @@ class CookieJWTAuthentication(BaseAuthentication):
             user = JWTAuthentication().get_user(validated)
         except Exception as exc:
             raise AuthenticationFailed("Your session has expired. Please sign in again.") from exc
+        from .models import UserWorkspace
+        active_role = validated.get("active_role") or user.role
+        if not UserWorkspace.objects.filter(user=user, role=active_role).exists():
+            raise AuthenticationFailed("This workspace is no longer available for your account. Please sign in again.")
+        user.active_role = active_role
         if request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
             check = CsrfViewMiddleware(lambda req: None).process_view(request, None, (), {})
             if check: raise AuthenticationFailed("CSRF verification failed. Refresh the page and try again.")

@@ -49,7 +49,7 @@ Sign-in state comes from Django's JWT session in HttpOnly cookies: `AuthProvider
 - **Driver dashboard** (`/dashboard`): discover active campaigns, apply, view accepted campaigns, select the current ad, and start/stop a driver-reported broadcast timer. Sample records are visibly marked demo. Earnings are estimates from recorded hours and the campaign rate; impressions stay unavailable unless a demo fixture supplies clearly labeled values.
 - **Admin dashboard** (`/dashboard/admin`): platform counts and approval queues are protected by Django role permissions.
 - **Management pages**: `/dashboard/campaigns` is advertiser campaign management or the driver campaign marketplace depending on role; `/dashboard/advertisements`, `/dashboard/vehicles`, `/dashboard/payments`, `/dashboard/notifications`, and `/dashboard/profile` remain role-scoped. Driver earnings/activity is at `/dashboard/earnings`. Admin lists are under `/dashboard/admin/`.
-- **Settings** (`/dashboard/settings`): updates the Django user profile and supports password changes.
+- **Settings** (`/dashboard/settings`): updates the Django user profile, supports password changes, and lets a verified user add a Business or Driver workspace to the same email account. A top-bar selector switches between enabled workspaces.
 - **Sign out** returns to the landing page.
 
 ## State machines
@@ -150,7 +150,7 @@ Driver campaign APIs support available listings, applications, advertiser accept
 - Vercel Production variables are configured as `NEXT_PUBLIC_API_URL=/api/v1`, `DJANGO_API_ORIGIN=https://fleetcast-django-api.onrender.com`, and `DJANGO_API_URL=https://fleetcast-django-api.onrender.com/api/v1`. Browser API requests use the same-origin Vercel rewrite to preserve HttpOnly cookies.
 - The Vercel API proxy health route has been verified through to Django/Gunicorn. Additive Django migrations have been applied to Supabase after read-only schema, Auth, and Storage inspection.
 
-The GitHub deployment branch is `codex/render-deployment`. The Render Blueprint applies the reviewed `accounts.0002_googleoauthattempt` additive migration during build; later migrations still require schema review and an explicit Blueprint change. Keep Google and Supabase credentials in private service environment settings, never in source control or `NEXT_PUBLIC_` variables.
+The GitHub deployment branch is `codex/render-deployment`. The Render Blueprint applies the additive `accounts.0003_userworkspace` membership migration and campaign marketplace migration during build. The account migration preserves existing role assignments and creates membership rows; it does not duplicate or alter users. Keep Google and Supabase credentials in private service environment settings, never in source control or `NEXT_PUBLIC_` variables.
 
 Register `https://fleetcast-website-pjcr.vercel.app/api/v1/auth/google/callback/` as an authorized redirect URI for the `Local_web Fleetcast` Google OAuth client. This URI and the matching public client ID are configured in Google Cloud and Render. Keep the corresponding client secret private. The `oauth_state` fix is deployed and the additive state-table migration is applied; a real production Google sign-in reached the correct dashboard. The backend upload MIME fix and verified legacy-account transition are deployed; end-to-end upload still needs an authenticated test.
 

@@ -33,7 +33,7 @@ export default function SignupCard({ portal, portalKey }: { portal: string; port
       <div className="login-card__logo" aria-label="Fleetcast" role="img"><Mark className="login-card__mark" /><span>fleetcast</span></div>
       {registered?<div><h1 className="login-card__title">Check your email</h1><p className="login-card__sub">{notice}</p>{error&&<p className="login-card__error" role="alert">{error}</p>}<button type="button" className="login-link" onClick={resend} disabled={!!busy}>{busy?"Sending…":"Send a new verification link"}</button><p className="auth-switch">Already verified? <Link href={`/login${qs}`}>Log in</Link></p></div>:<form onSubmit={create} noValidate>
         <h1 className="login-card__title">Create your account</h1>
-        <p className="login-card__sub">Sign up for Fleetcast to get started with the {portal}.</p>
+        <p className="login-card__sub">Sign up for Fleetcast to get started with the {portal}. You can add your other workspace later in Settings using this same email.</p>
         <label className="field auth-role"><span>Account type</span><select value={role} onChange={(e) => setRole(e.target.value as typeof role)}><option value="BUSINESS">Business / Advertiser</option><option value="DRIVER">Vehicle Owner / Driver</option></select></label>
         <GoogleButton onClick={google} busy={busy === "google"} disabled={!!busy} /><OrDivider />
         <Field label="Full name*" value={name} onChange={setName} autoComplete="name" />

@@ -6,7 +6,7 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt && python manage.py migrate accounts 0002_googleoauthattempt --noinput && python manage.py migrate campaigns 0002_broadcastsession_campaignparticipation_and_more --noinput && python manage.py seed_demo_campaigns --skip-assets && python manage.py collectstatic --no-input
+    buildCommand: pip install -r requirements.txt && python manage.py migrate accounts 0003_userworkspace --noinput && python manage.py migrate campaigns 0002_broadcastsession_campaignparticipation_and_more --noinput && python manage.py seed_demo_campaigns --skip-assets && python manage.py collectstatic --no-input
     # Log path only, never the query string (Google's callback query contains
     # short-lived authorization codes and OAuth state).
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile - --access-logformat '%(h)s %(l)s %(u)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s'

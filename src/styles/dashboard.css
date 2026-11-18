@@ -842,3 +842,6 @@ a.dash__link:hover {
   .driver-campaign { padding: 14px; }
   .driver-campaign__facts { gap: 9px; }
 }
+.workspace-switch { display:inline-flex; align-items:center; }
+.workspace-switch select { min-height:38px; max-width:180px; padding:0 30px 0 11px; color:var(--navy); background:#fff; border:1px solid rgba(12,35,56,.18); border-radius:7px; font:inherit; font-size:.82rem; }
+.workspace-switch__error { position:absolute; right:18px; top:calc(100% - 4px); z-index:4; max-width:min(380px,calc(100vw - 36px)); padding:9px 12px; border:1px solid rgba(160,45,45,.22); border-radius:6px; background:#fff; color:#8c2727; font-size:.82rem; box-shadow:0 5px 16px rgba(12,35,56,.08); }
