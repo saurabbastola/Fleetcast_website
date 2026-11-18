@@ -90,9 +90,10 @@ class ParticipationSerializer(serializers.ModelSerializer):
     estimated_earnings = serializers.SerializerMethodField()
     measurement_status = serializers.SerializerMethodField()
     open_session = serializers.SerializerMethodField()
+    broadcast_sessions = serializers.SerializerMethodField()
     class Meta:
         model = CampaignParticipation
-        fields = ["id", "campaign", "driver_id", "driver_name", "driver_email", "status", "is_current", "applied_at", "updated_at", "hours", "impressions", "estimated_earnings", "measurement_status", "open_session"]
+        fields = ["id", "campaign", "driver_id", "driver_name", "driver_email", "status", "is_current", "applied_at", "updated_at", "hours", "impressions", "estimated_earnings", "measurement_status", "open_session", "broadcast_sessions"]
         read_only_fields = fields
     def get_driver_name(self, obj):
         return obj.driver.get_full_name() or obj.driver.email.split("@", 1)[0]
@@ -114,3 +115,5 @@ class ParticipationSerializer(serializers.ModelSerializer):
     def get_open_session(self, obj):
         session = next((s for s in self._sessions(obj) if s.ended_at is None), None)
         return BroadcastSessionSerializer(session).data if session else None
+    def get_broadcast_sessions(self, obj):
+        return BroadcastSessionSerializer(self._sessions(obj), many=True).data

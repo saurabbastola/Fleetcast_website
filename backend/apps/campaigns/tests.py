@@ -93,6 +93,26 @@ class CampaignParticipationWorkflowTests(APITestCase):
         response = self.client.post(f"/api/v1/driver/campaigns/{other_campaign.id}/switch/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_driver_activity_includes_campaign_and_session_time_impressions(self):
+        participation = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.COMPLETED)
+        started = timezone.now() - timedelta(hours=4)
+        ended = started + timedelta(hours=1)
+        BroadcastSession.objects.create(
+            participation=participation, started_at=started, ended_at=ended,
+            impressions=1240, measurement_status=BroadcastSession.MeasurementStatus.ESTIMATED,
+        )
+        self.auth(self.driver)
+        response = self.client.get("/api/v1/driver/campaigns/mine/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = response.data[0]
+        self.assertEqual(row["campaign"]["name"], self.campaign.name)
+        self.assertEqual(len(row["broadcast_sessions"]), 1)
+        session = row["broadcast_sessions"][0]
+        self.assertEqual(session["impressions"], 1240)
+        self.assertEqual(session["measurement_status"], "ESTIMATED")
+        self.assertEqual(session["hours"], 1.0)
+        self.assertIn("T", session["started_at"])
+
     def test_pausing_closes_broadcast_notifies_driver_and_removes_campaign(self):
         participation = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.ACTIVE, is_current=True)
         session = BroadcastSession.objects.create(participation=participation, started_at=timezone.now()-timedelta(hours=1))
