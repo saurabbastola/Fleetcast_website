@@ -12,6 +12,7 @@ class Vehicle(models.Model):
     vehicle_type = models.CharField(max_length=80)
     registration_document = models.CharField(max_length=500, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    is_demo = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     class Meta: ordering = ["-created_at"]

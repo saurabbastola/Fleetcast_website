@@ -33,7 +33,7 @@ function NavIcon({ name }: { name: DashNavItem["icon"] }) {
 
 function navFor(role: string): DashNavItem[] {
   if (role === "DRIVER") return [
-    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Campaigns",href:"/dashboard/campaigns",icon:"megaphone"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
+    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Driver Activity",href:"/dashboard/campaigns",icon:"megaphone"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
     {label:"Profile",href:"/dashboard/profile",icon:"gear"},{label:"Notifications",href:"/dashboard/notifications",icon:"chart"},
     {label:"Earnings",href:"/dashboard/earnings",icon:"chart"},{label:"Settings",href:"/dashboard/settings",icon:"gear"},
   ];
@@ -96,7 +96,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
         <nav className="dash__nav">
           <ul>
             {dashNav.map((item) => {
-              const active = item.href === pathname;
+              const active = item.href === pathname || (!!item.href && item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
               return (
                 <li key={item.label}>
                   {item.href ? (

@@ -42,7 +42,7 @@ def store_upload(upload, bucket, private=False):
     return key
 
 def signed_storage_url(bucket, key, expires=300):
-    if not key: return None
+    if not key or not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY: return None
     req = Request(f"{settings.SUPABASE_URL}/storage/v1/object/sign/{bucket}/{key}", data=(__import__("json").dumps({"expiresIn": expires})).encode(), headers={"Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}", "apikey": settings.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json"}, method="POST")
     try:
         with urlopen(req, timeout=10) as response:

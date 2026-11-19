@@ -7,9 +7,9 @@ import { firstName } from "@/lib/machines/session";
 import { api, ApiError } from "@/lib/api/client";
 import { rows } from "@/lib/api/resources";
 import type { Campaign, Page } from "@/lib/api/campaigns";
-import DriverCampaignDashboard from "@/components/dashboard/DriverCampaignDashboard";
+import FleetOwnerDashboard, { type FleetSummary } from "@/components/dashboard/FleetOwnerDashboard";
 
-type Summary = {campaigns?:number; active_campaigns?:number; advertisements?:number; impressions?:number|null; qr_scans?:number|null; vehicles?:number; pending_vehicles?:number; approved_vehicles?:number; earnings?:number|null; broadcast_hours?:number|null; measurement_status?:string; current_advertisement?:any; businesses?:number; drivers?:number};
+type Summary = FleetSummary & {active_campaigns?:number; advertisements?:number; qr_scans?:number|null; current_advertisement?:any; businesses?:number; drivers?:number};
 const fmt = (n?: number | null) => n == null ? "Not available" : n.toLocaleString("en-US");
 const label = (s: string) => s.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -39,7 +39,7 @@ export default function DashboardView() {
       ? [{label:"Businesses", value:fmt(summary?.businesses)}, {label:"Drivers", value:fmt(summary?.drivers)}, {label:"Vehicles", value:fmt(summary?.vehicles)}, {label:"Campaigns", value:fmt(summary?.campaigns)}]
       : [{label:"Campaigns", value:fmt(summary?.campaigns)}, {label:"Active campaigns", value:fmt(summary?.active_campaigns)}, {label:"Advertisements", value:fmt(summary?.advertisements)}, {label:"Impressions", value:fmt(summary?.impressions)}];
 
-  if (account.role === "DRIVER") return <DriverCampaignDashboard summary={summary||{}}/>;
+  if (account.role === "DRIVER") return <FleetOwnerDashboard account={account} summary={summary} loading={loading} error={error} onRetry={()=>void load()}/>;
 
   return <div className="dview">
     <section className="dview__hello"><div><h1>Welcome back, {firstName(account)}</h1><p>{account.role === "ADMIN" ? "Review platform activity and pending approvals." : "Manage your campaigns and advertising creative."}</p></div><Link className="btn btn--orange btn--sm" href={account.role === "ADMIN" ? "/dashboard/admin/businesses" : "/dashboard/campaigns/new"}>{account.role === "ADMIN" ? "Review businesses" : "+ New campaign"}</Link></section>

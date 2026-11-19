@@ -14,8 +14,8 @@ export type CampaignParticipation = {
   id: number; campaign: Campaign; driver_id?: string; driver_name?: string; driver_email?: string;
   status: string; is_current: boolean; applied_at: string; updated_at: string; hours: number;
   impressions: number | null; estimated_earnings: string; measurement_status: "DEMO" | "ESTIMATED" | "VERIFIED" | "UNAVAILABLE";
-  open_session: {id:number;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:string}|null;
-  broadcast_sessions: {id:number;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:"DEMO"|"ESTIMATED"|"VERIFIED"}[];
+  open_session: {id:number;vehicle:number|null;vehicle_summary:{id:number;registration_number:string;vehicle_model:string;vehicle_type:string}|null;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:string}|null;
+  broadcast_sessions: {id:number;vehicle:number|null;vehicle_summary:{id:number;registration_number:string;vehicle_model:string;vehicle_type:string}|null;started_at:string;ended_at:string|null;hours:number;impressions:number|null;measurement_status:"DEMO"|"ESTIMATED"|"VERIFIED"}[];
   vehicle: number | null; vehicle_summary: {id:number;registration_number:string;vehicle_model:string;vehicle_type:string;status:string}|null;
 };
 export type Page<T> = {count: number; next: string | null; previous: string | null; results: T[]};

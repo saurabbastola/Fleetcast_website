@@ -8,8 +8,8 @@ class VehicleSerializer(serializers.ModelSerializer):
     registration_document_url = serializers.SerializerMethodField()
     class Meta:
         model = Vehicle
-        fields = ["id", "registration_number", "vehicle_model", "vehicle_type", "registration_document", "registration_document_url", "status", "created_at", "updated_at"]
-        read_only_fields = ["id", "status", "created_at", "updated_at", "registration_document_url"]
+        fields = ["id", "registration_number", "vehicle_model", "vehicle_type", "registration_document", "registration_document_url", "status", "is_demo", "created_at", "updated_at"]
+        read_only_fields = ["id", "status", "is_demo", "created_at", "updated_at", "registration_document_url"]
     def get_registration_document_url(self, obj): return signed_storage_url(settings.SUPABASE_DOCUMENTS_BUCKET, obj.registration_document)
     def validate_registration_number(self, value):
         qs = Vehicle.objects.filter(registration_number__iexact=value.strip())

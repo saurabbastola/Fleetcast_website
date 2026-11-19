@@ -33,7 +33,8 @@ def notify_participants(campaign, message, *, completed=False):
 
 
 def validate_campaign_activation(campaign):
-    if not campaign.advertisement_id or campaign.advertisement.status != "APPROVED":
+    approved_demo_ad = bool(campaign.is_demo and campaign.advertisement_id and campaign.advertisement.is_demo)
+    if not campaign.advertisement_id or (campaign.advertisement.status != "APPROVED" and not approved_demo_ad):
         raise ValidationError({"advertisement": "Attach an approved advertisement before making this campaign available."})
     if not campaign.start_date or not campaign.end_date:
         raise ValidationError({"dates": "Campaign start and end dates are required before activation."})
@@ -53,7 +54,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
             joined_count=Count("participations", filter=Q(participations__status__in=ACTIVE_PARTICIPATION_STATUSES), distinct=True)
         ).order_by("-created_at", "pk")
 
-    def perform_create(self, serializer): serializer.save(business=self.request.user)
+    def perform_create(self, serializer):
+        from django.conf import settings
+        serializer.save(business=self.request.user, is_demo=settings.FLEETCAST_DEMO_MODE)
 
     @action(detail=True, methods=["get"])
     def participants(self, request, pk=None):
@@ -204,6 +207,9 @@ class DriverCampaignViewSet(viewsets.GenericViewSet):
                 raise ValidationError({"vehicle_id": "Choose one of your own registered vehicles."})
         if campaign.status != Campaign.Status.ACTIVE:
             raise ValidationError("Only active campaigns can be selected for a vehicle.")
+        open_same = BroadcastSession.objects.filter(participation=participation, ended_at__isnull=True).exists()
+        if open_same and (vehicle.id if vehicle else None) != participation.vehicle_id:
+            raise ValidationError("Stop this broadcast before changing its assigned vehicle.")
         open_other = BroadcastSession.objects.filter(participation__driver=request.user, ended_at__isnull=True).exclude(participation=participation).exists()
         if open_other:
             raise ValidationError("Stop the current broadcast before assigning a different campaign to a vehicle.")
@@ -211,6 +217,8 @@ class DriverCampaignViewSet(viewsets.GenericViewSet):
             if vehicle:
                 CampaignParticipation.objects.filter(driver=request.user, is_current=True).exclude(pk=participation.pk).update(is_current=False)
                 participation.is_current = True
+            else:
+                participation.is_current = False
             participation.vehicle = vehicle
             participation.save(update_fields=["vehicle", "is_current", "updated_at"])
         return Response(ParticipationSerializer(participation).data)
@@ -263,7 +271,7 @@ class DriverCampaignViewSet(viewsets.GenericViewSet):
             participation.is_current = True; participation.status = CampaignParticipation.Status.ACTIVE
             participation.save(update_fields=["is_current", "status", "updated_at"])
             measurement_status = BroadcastSession.MeasurementStatus.DEMO if campaign.is_demo else BroadcastSession.MeasurementStatus.ESTIMATED
-            session = BroadcastSession.objects.create(participation=participation, started_at=timezone.now(), measurement_status=measurement_status)
+            session = BroadcastSession.objects.create(participation=participation, vehicle=participation.vehicle, started_at=timezone.now(), measurement_status=measurement_status)
         return Response({"participation": ParticipationSerializer(participation).data, "session_id": session.id}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])

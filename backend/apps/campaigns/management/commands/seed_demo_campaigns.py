@@ -16,6 +16,7 @@ from apps.businesses.models import BusinessProfile
 from apps.advertisements.models import Advertisement
 from apps.drivers.models import DriverProfile
 from apps.campaigns.models import BroadcastSession, Campaign, CampaignParticipation
+from apps.vehicles.models import Vehicle
 
 
 DEMO_CAMPAIGNS = [
@@ -92,7 +93,7 @@ class Command(BaseCommand):
             if not shared_business: raise CommandError("The specified business account does not exist or is not a Business user.")
         driver = None
         if options["driver_email"]:
-            driver = UserModel.objects.filter(email__iexact=options["driver_email"], role=User.Role.DRIVER, is_active=True).first()
+            driver = UserModel.objects.filter(email__iexact=options["driver_email"], workspaces__role=User.Role.DRIVER, is_active=True).distinct().first()
             if not driver: raise CommandError("The specified driver account does not exist or is not active.")
             if not DriverProfile.objects.filter(user=driver).exists(): raise CommandError("The selected driver needs a driver profile before demo activity can be seeded.")
 
@@ -157,7 +158,7 @@ class Command(BaseCommand):
         for index, campaign in enumerate(active):
             participation, _ = CampaignParticipation.objects.update_or_create(
                 campaign=campaign, driver=driver,
-                defaults={"status":CampaignParticipation.Status.ACTIVE, "is_current":index == 0},
+                defaults={"status":CampaignParticipation.Status.ACTIVE, "is_current":index == 0, "vehicle":Vehicle.objects.filter(driver=driver, is_demo=True).first()},
             )
             participations.append(participation)
         now = timezone.now()
@@ -167,6 +168,7 @@ class Command(BaseCommand):
             session = BroadcastSession.objects.filter(participation=participation, measurement_status=BroadcastSession.MeasurementStatus.DEMO).first()
             if session:
                 session.started_at = started; session.ended_at = started + timedelta(hours=duration); session.impressions = impressions
-                session.save(update_fields=["started_at", "ended_at", "impressions"])
+                session.vehicle = participation.vehicle
+                session.save(update_fields=["started_at", "ended_at", "impressions", "vehicle"])
             else:
-                BroadcastSession.objects.create(participation=participation, started_at=started, ended_at=started+timedelta(hours=duration), impressions=impressions, measurement_status=BroadcastSession.MeasurementStatus.DEMO)
+                BroadcastSession.objects.create(participation=participation, vehicle=participation.vehicle, started_at=started, ended_at=started+timedelta(hours=duration), impressions=impressions, measurement_status=BroadcastSession.MeasurementStatus.DEMO)

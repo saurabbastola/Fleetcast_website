@@ -11,6 +11,8 @@ class Advertisement(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     image = models.CharField(max_length=500, blank=True)
+    # Set by the server only when the application is explicitly in demo mode.
+    is_demo = models.BooleanField(default=False, db_index=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

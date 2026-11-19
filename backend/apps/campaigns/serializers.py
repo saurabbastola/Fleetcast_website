@@ -74,10 +74,15 @@ class CampaignSerializer(serializers.ModelSerializer):
 
 class BroadcastSessionSerializer(serializers.ModelSerializer):
     hours = serializers.FloatField(read_only=True)
+    vehicle_summary = serializers.SerializerMethodField()
     class Meta:
         model = BroadcastSession
-        fields = ["id", "started_at", "ended_at", "hours", "impressions", "measurement_status", "created_at"]
+        fields = ["id", "vehicle", "vehicle_summary", "started_at", "ended_at", "hours", "impressions", "measurement_status", "created_at"]
         read_only_fields = fields
+    def get_vehicle_summary(self, obj):
+        vehicle = obj.vehicle
+        if not vehicle: return None
+        return {"id": vehicle.id, "registration_number": vehicle.registration_number, "vehicle_model": vehicle.vehicle_model, "vehicle_type": vehicle.vehicle_type}
 
 
 class ParticipationSerializer(serializers.ModelSerializer):

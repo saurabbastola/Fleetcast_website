@@ -22,7 +22,7 @@ const CONFIG: Record<CollectionKind,{title:string;endpoint:string;columns:string
 };
 
 const label = (key:string) => key.replaceAll("_"," ").replace(/\b\w/g,(x)=>x.toUpperCase());
-const readable = (value:any) => value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Yes" : "No" : String(value).replaceAll("_"," ");
+const readable = (value:any, kind?:CollectionKind, column?:string) => value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Yes" : "No" : kind==="vehicles"&&column==="status"&&value==="APPROVED"?"Verified":kind==="vehicles"&&column==="status"&&value==="PENDING"?"Pending review":String(value).replaceAll("_"," ");
 
 export default function DashboardCollection({kind}:{kind:CollectionKind}) {
   const config = CONFIG[kind]; const isAdmin = kind.startsWith("admin-"); const hasActions = (config.create && kind !== "payments" && kind !== "notifications") || isAdmin || kind === "notifications";
@@ -69,7 +69,8 @@ export default function DashboardCollection({kind}:{kind:CollectionKind}) {
     </form></section>}
     {config.search&&<label className="collection-search"><span>Search</span><input value={search} onChange={(e)=>{setSearch(e.target.value);setPage(1);}} placeholder={`Search ${config.title.toLowerCase()}`} /></label>}
     <section className="dcard dcard--wide"><div className="dtable__wrap"><table className="dtable"><thead><tr>{config.columns.map((col)=><th key={col}>{label(col)}</th>)}{(config.create||isAdmin||kind==="notifications")&&<th scope="col">Actions</th>}</tr></thead><tbody>
-      {loading?<tr><td colSpan={config.columns.length+(hasActions?1:0)}>Loading…</td></tr>:data.length===0?<tr><td colSpan={config.columns.length+(hasActions?1:0)}>{config.empty}</td></tr>:data.map((item)=><Fragment key={item.id}><tr>{config.columns.map((col)=><td key={col}>{col==="participation_count"?`${item[col]??0} joined`:readable(item[col])}</td>)}{hasActions&&<td className="collection-actions">
+      {loading?<tr><td colSpan={config.columns.length+(hasActions?1:0)}>Loading…</td></tr>:data.length===0?<tr><td colSpan={config.columns.length+(hasActions?1:0)}>{config.empty}</td></tr>:data.map((item)=><Fragment key={item.id}><tr>{config.columns.map((col)=><td key={col}>{col==="participation_count"?`${item[col]??0} joined`:readable(item[col],kind,col)}</td>)}{hasActions&&<td className="collection-actions">
+        {kind==="vehicles"&&<Link href={`/dashboard/vehicles/${item.id}`}>Ad history</Link>}
         {config.create&&kind!=="payments"&&kind!=="notifications"&&<><button type="button" onClick={()=>startEdit(item)}>Edit</button><button type="button" onClick={()=>void remove(item)}>Delete</button></>}
         {kind==="campaigns"&&<><button type="button" onClick={()=>void toggleParticipants(item)}>Drivers ({item.participation_count||0})</button>{item.status==="ACTIVE"?<button type="button" onClick={()=>void setCampaignStatus(item,"PAUSED")}>Pause</button>:item.status==="PAUSED"||item.status==="DRAFT"||item.status==="APPROVED"?<button type="button" onClick={()=>void setCampaignStatus(item,"ACTIVE")}>Make available</button>:null}{!["COMPLETED","REJECTED"].includes(item.status)&&item.status!=="COMPLETED"&&<button type="button" onClick={()=>void setCampaignStatus(item,"COMPLETED")}>End</button>}</>}
         {isAdmin&&kind==="admin-businesses"&&<><button type="button" onClick={()=>void review(item,"APPROVED")}>Approve</button><button type="button" onClick={()=>void review(item,"REJECTED")}>Reject</button></>}

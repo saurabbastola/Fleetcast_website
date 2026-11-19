@@ -84,6 +84,7 @@ class BroadcastSession(models.Model):
         VERIFIED = "VERIFIED", "Verified"
 
     participation = models.ForeignKey(CampaignParticipation, on_delete=models.CASCADE, related_name="broadcast_sessions")
+    vehicle = models.ForeignKey("vehicles.Vehicle", null=True, blank=True, on_delete=models.SET_NULL, related_name="broadcast_sessions")
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
     impressions = models.PositiveBigIntegerField(null=True, blank=True)

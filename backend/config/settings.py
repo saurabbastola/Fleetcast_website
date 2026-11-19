@@ -9,6 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("SECRET_KEY", "insecure-development-key-change-me")
 DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes"}
+FLEETCAST_DEMO_MODE = os.getenv("FLEETCAST_DEMO_MODE", "False").lower() in {"1", "true", "yes"}
+DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "saurabbanstola5@gmail.com").strip().lower()
 ALLOWED_HOSTS = [v.strip() for v in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if v.strip()]
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
 if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
