@@ -265,13 +265,26 @@ class DriverCampaignViewSet(viewsets.GenericViewSet):
         if campaign.status != Campaign.Status.ACTIVE: raise ValidationError("This campaign is not currently active.")
         with transaction.atomic():
             User.objects.select_for_update().get(pk=request.user.pk)
-            if BroadcastSession.objects.filter(participation__driver=request.user, ended_at__isnull=True).exists():
-                raise ValidationError("Stop your current broadcast session before starting another.")
+            previous_session = BroadcastSession.objects.select_for_update().filter(participation__driver=request.user, ended_at__isnull=True).select_related("participation").first()
+            now = timezone.now()
+            if previous_session and previous_session.participation_id == participation.id:
+                raise ValidationError("This advertisement is already broadcasting.")
+            if previous_session:
+                # Each interval is an immutable event. Switching ads ends the
+                # previous interval before opening the next one.
+                previous_session.ended_at = now
+                previous_session.save(update_fields=["ended_at"])
+                CampaignParticipation.objects.filter(pk=previous_session.participation_id).update(is_current=False)
             CampaignParticipation.objects.filter(driver=request.user, is_current=True).update(is_current=False)
             participation.is_current = True; participation.status = CampaignParticipation.Status.ACTIVE
             participation.save(update_fields=["is_current", "status", "updated_at"])
             measurement_status = BroadcastSession.MeasurementStatus.DEMO if campaign.is_demo else BroadcastSession.MeasurementStatus.ESTIMATED
-            session = BroadcastSession.objects.create(participation=participation, vehicle=participation.vehicle, started_at=timezone.now(), measurement_status=measurement_status)
+            session = BroadcastSession.objects.create(
+                participation=participation, vehicle=participation.vehicle, started_at=now,
+                advertisement=campaign.advertisement,
+                compensation_rate_snapshot=campaign.compensation_rate,
+                measurement_status=measurement_status,
+            )
         return Response({"participation": ParticipationSerializer(participation).data, "session_id": session.id}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -281,7 +294,7 @@ class DriverCampaignViewSet(viewsets.GenericViewSet):
         session = BroadcastSession.objects.filter(participation=participation, ended_at__isnull=True).first()
         if not session: raise ValidationError("There is no active broadcast session for this campaign.")
         session.ended_at = timezone.now(); session.save(update_fields=["ended_at"])
-        return Response({"session": {"id": session.id, "hours": session.hours, "measurement_status": session.measurement_status}})
+        return Response({"session": {"id": session.id, "hours": session.hours, "earnings": session.earnings_amount, "earning_status": session.earning_status, "measurement_status": session.measurement_status}})
 
     @action(detail=True, methods=["post"])
     def withdraw(self, request, pk=None):

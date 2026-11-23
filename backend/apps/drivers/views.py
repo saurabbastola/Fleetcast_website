@@ -2,6 +2,9 @@ from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from decimal import Decimal
 from apps.accounts.permissions import IsDriverRole, IsAdminRole
 from apps.accounts.models import User
 from apps.vehicles.models import Vehicle
@@ -20,7 +23,7 @@ class DriverDashboardView(APIView):
         from apps.core import signed_storage_url
         from apps.businesses.models import BusinessProfile
         from apps.campaigns.models import BroadcastSession, CampaignParticipation
-        from apps.campaigns.serializers import ParticipationSerializer
+        from apps.campaigns.serializers import ParticipationSerializer, DriverAdvertisingEventSerializer
         from decimal import Decimal
         vehicle_queryset = Vehicle.objects.filter(driver=request.user)
         vehicles = list(vehicle_queryset.order_by("registration_number", "pk"))
@@ -30,11 +33,15 @@ class DriverDashboardView(APIView):
             "campaign__business__business_profile", "campaign__advertisement", "vehicle",
         ).prefetch_related("broadcast_sessions"))
         sessions = list(BroadcastSession.objects.filter(participation__driver=request.user).select_related(
-            "vehicle", "participation__vehicle", "participation__campaign__business__business_profile", "participation__campaign__advertisement",
+            "vehicle", "advertisement", "participation__vehicle", "participation__campaign__business__business_profile", "participation__campaign__advertisement",
         ).order_by("-started_at", "-pk"))
         hours = round(sum(item.hours for item in sessions), 2)
-        impressions = [item.impressions for item in sessions if item.impressions is not None]
-        earnings = round(sum((Decimal(str(item.hours)) * item.participation.campaign.compensation_rate for item in sessions), Decimal("0")), 2) if sessions else None
+        estimated_impressions = [item.impressions for item in sessions if item.impressions is not None and item.measurement_status == BroadcastSession.MeasurementStatus.ESTIMATED]
+        verified_impressions = [item.impressions for item in sessions if item.impressions is not None and item.measurement_status == BroadcastSession.MeasurementStatus.VERIFIED]
+        demo_impressions = [item.impressions for item in sessions if item.impressions is not None and item.measurement_status == BroadcastSession.MeasurementStatus.DEMO]
+        earnings = sum((item.earnings_amount for item in sessions), Decimal("0.00"))
+        pending_earnings = sum((item.earnings_amount for item in sessions if item.earning_status == BroadcastSession.EarningStatus.PENDING), Decimal("0.00"))
+        paid_earnings = sum((item.earnings_amount for item in sessions if item.earning_status == BroadcastSession.EarningStatus.PAID), Decimal("0.00"))
         evidence = "UNAVAILABLE" if not sessions else "DEMO" if any(item.measurement_status == BroadcastSession.MeasurementStatus.DEMO for item in sessions) else "VERIFIED" if all(item.measurement_status == BroadcastSession.MeasurementStatus.VERIFIED for item in sessions) else "ESTIMATED"
         current = next((item for item in participations if item.is_current), None)
         def advertiser(campaign):
@@ -72,23 +79,81 @@ class DriverDashboardView(APIView):
             })
         active_campaigns = {item.campaign_id for item in participations if item.vehicle_id and item.status in (CampaignParticipation.Status.ACCEPTED, CampaignParticipation.Status.ACTIVE) and item.campaign.status == "ACTIVE"}
         recent_activity = []
-        for session in sessions[:8]:
+        for session in sessions[:10]:
             campaign = session.participation.campaign
             vehicle = session.vehicle or session.participation.vehicle
             recent_activity.append({
-                "session_id": session.id, **creative(campaign), "started_at": session.started_at,
-                "ended_at": session.ended_at, "hours": session.hours, "impressions": session.impressions,
-                "measurement_status": session.measurement_status,
-                "vehicle": {"id": vehicle.id, "registration_number": vehicle.registration_number, "vehicle_model": vehicle.vehicle_model} if vehicle else None,
+                **DriverAdvertisingEventSerializer(session, context={"request": request}).data,
             })
         return Response({
             "vehicles": len(vehicles), "pending_vehicles": sum(1 for vehicle in vehicles if vehicle.status == "PENDING"), "approved_vehicles": sum(1 for vehicle in vehicles if vehicle.status == "APPROVED"),
             "campaigns": len(active_campaigns), "active_advertising_vehicles": sum(1 for row in fleet_vehicles if row["is_broadcasting"]),
-            "broadcast_hours": hours if sessions else None, "impressions": sum(impressions) if impressions else None,
-            "earnings": earnings, "measurement_status": evidence, "fleet_vehicles": fleet_vehicles,
+            "broadcast_hours": hours,
+            "impressions": sum(estimated_impressions + verified_impressions + demo_impressions) if estimated_impressions or verified_impressions or demo_impressions else None,
+            "estimated_impressions": sum(estimated_impressions) if estimated_impressions else None,
+            "verified_impressions": sum(verified_impressions) if verified_impressions else None,
+            "demo_impressions": sum(demo_impressions) if demo_impressions else None,
+            "advertisements_displayed": sum(item.plays for item in sessions if item.plays is not None) if any(item.plays is not None for item in sessions) else None,
+            "earnings": earnings, "pending_earnings": pending_earnings, "paid_earnings": paid_earnings,
+            "measurement_status": evidence, "is_broadcasting": any(item.ended_at is None for item in sessions),
+            "last_advertisement": recent_activity[0] if recent_activity else None,
+            "fleet_vehicles": fleet_vehicles,
             "recent_activity": recent_activity,
             "current_advertisement": ParticipationSerializer(current).data if current else None,
         })
+
+
+class DriverEarningsView(APIView):
+    """Read-only earnings ledger derived one-to-one from persisted broadcast events."""
+    permission_classes = [IsAuthenticated, IsDriverRole]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from apps.campaigns.models import BroadcastSession
+        from apps.campaigns.serializers import DriverAdvertisingEventSerializer
+
+        try:
+            date_from = date.fromisoformat(request.query_params["date_from"]) if request.query_params.get("date_from") else None
+            date_to = date.fromisoformat(request.query_params["date_to"]) if request.query_params.get("date_to") else None
+        except ValueError as exc:
+            raise ValidationError({"date": "Use YYYY-MM-DD for the date range."}) from exc
+        if date_from and date_to and date_from > date_to:
+            raise ValidationError({"date_to": "End date must be on or after start date."})
+        payment_status = request.query_params.get("status", "").upper()
+        if payment_status and payment_status not in BroadcastSession.EarningStatus.values:
+            raise ValidationError({"status": "Choose PENDING or PAID."})
+
+        base = BroadcastSession.objects.filter(participation__driver=request.user).select_related(
+            "vehicle", "advertisement", "participation__vehicle", "participation__campaign__business__business_profile",
+            "participation__campaign__advertisement",
+        ).order_by("-started_at", "-pk")
+        all_events = list(base)
+        today = timezone.localdate()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
+        def total(events):
+            return sum((event.earnings_amount for event in events), Decimal("0.00"))
+        summary = {
+            "total_earnings": total(all_events),
+            "today": total([event for event in all_events if timezone.localtime(event.started_at).date() == today]),
+            "this_week": total([event for event in all_events if week_start <= timezone.localtime(event.started_at).date() <= today]),
+            "this_month": total([event for event in all_events if month_start <= timezone.localtime(event.started_at).date() <= today]),
+            "pending_earnings": total([event for event in all_events if event.earning_status == BroadcastSession.EarningStatus.PENDING]),
+            "paid_earnings": total([event for event in all_events if event.earning_status == BroadcastSession.EarningStatus.PAID]),
+        }
+        filtered = [event for event in all_events
+                    if (not date_from or timezone.localtime(event.started_at).date() >= date_from)
+                    and (not date_to or timezone.localtime(event.started_at).date() <= date_to)
+                    and (not payment_status or event.earning_status == payment_status)]
+        try:
+            page_size = min(max(int(request.query_params.get("page_size", 25)), 1), 100)
+            page = max(int(request.query_params.get("page", 1)), 1)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"page": "Page and page_size must be positive integers."}) from exc
+        start = (page - 1) * page_size
+        results = DriverAdvertisingEventSerializer(filtered[start:start + page_size], many=True, context={"request": request}).data
+        return Response({"summary": summary, "count": len(filtered), "page": page,
+                         "page_size": page_size, "results": results})
 
 class AdminDriverList(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]

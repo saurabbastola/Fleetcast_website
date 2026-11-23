@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -84,6 +84,9 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        from django.conf import settings
+        if not settings.FLEETCAST_DEMO_MODE:
+            raise CommandError("Demo campaign seeding is disabled. Set FLEETCAST_DEMO_MODE=True only on a development/demo database.")
         if options["ensure_storage"] and not options["skip_assets"]:
             self._ensure_asset_buckets()
         UserModel = get_user_model()
@@ -161,14 +164,41 @@ class Command(BaseCommand):
                 defaults={"status":CampaignParticipation.Status.ACTIVE, "is_current":index == 0, "vehicle":Vehicle.objects.filter(driver=driver, is_demo=True).first()},
             )
             participations.append(participation)
-        now = timezone.now()
-        examples = [(participations[0], 36, 2.5, 12500), (participations[-1], 72, 1.25, 6200)]
-        for participation, hours_ago, duration, impressions in examples:
-            started = now - timedelta(hours=hours_ago)
-            session = BroadcastSession.objects.filter(participation=participation, measurement_status=BroadcastSession.MeasurementStatus.DEMO).first()
+        examples = [
+            (participations[0], datetime(2026, 11, 18, 9, 0), 10, 120, BroadcastSession.EarningStatus.PAID),
+            (participations[-1], datetime(2026, 11, 18, 9, 15), 12, 180, BroadcastSession.EarningStatus.PENDING),
+            (participations[0], datetime(2026, 11, 18, 9, 30), 9, 150, BroadcastSession.EarningStatus.PENDING),
+        ]
+        claimed_session_ids = set()
+        for participation, start_naive, plays, impressions, earning_status in examples:
+            started = timezone.make_aware(start_naive, timezone.get_current_timezone())
+            session = BroadcastSession.objects.filter(
+                participation=participation, started_at=started,
+                measurement_status=BroadcastSession.MeasurementStatus.DEMO,
+            ).first()
+            if not session:
+                # Reuse the legacy seed's demo-only row where possible so
+                # rerunning this command updates, rather than duplicates, the
+                # demonstration history.
+                session = BroadcastSession.objects.filter(
+                    participation=participation,
+                    measurement_status=BroadcastSession.MeasurementStatus.DEMO,
+                ).exclude(pk__in=claimed_session_ids).order_by("id").first()
+            ended = started + timedelta(minutes=15)
             if session:
-                session.started_at = started; session.ended_at = started + timedelta(hours=duration); session.impressions = impressions
-                session.vehicle = participation.vehicle
-                session.save(update_fields=["started_at", "ended_at", "impressions", "vehicle"])
+                claimed_session_ids.add(session.pk)
+                session.started_at = started; session.ended_at = ended; session.vehicle = participation.vehicle
+                session.advertisement = participation.campaign.advertisement
+                session.plays = plays; session.impressions = impressions; session.earning_status = earning_status
+                session.compensation_rate_snapshot = participation.campaign.compensation_rate
+                session.measurement_status = BroadcastSession.MeasurementStatus.DEMO
+                session.save(update_fields=["started_at", "ended_at", "vehicle", "advertisement", "plays", "impressions", "earning_status", "compensation_rate_snapshot", "measurement_status"])
             else:
-                BroadcastSession.objects.create(participation=participation, vehicle=participation.vehicle, started_at=started, ended_at=started+timedelta(hours=duration), impressions=impressions, measurement_status=BroadcastSession.MeasurementStatus.DEMO)
+                session = BroadcastSession.objects.create(
+                    participation=participation, vehicle=participation.vehicle,
+                    advertisement=participation.campaign.advertisement,
+                    started_at=started, ended_at=ended, plays=plays, impressions=impressions,
+                    earning_status=earning_status, compensation_rate_snapshot=participation.campaign.compensation_rate,
+                    measurement_status=BroadcastSession.MeasurementStatus.DEMO,
+                )
+                claimed_session_ids.add(session.pk)

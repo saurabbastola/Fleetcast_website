@@ -1,6 +1,8 @@
 from decimal import Decimal
 
 from rest_framework import serializers
+from django.utils import timezone
+from apps.core import signed_storage_url
 from apps.businesses.models import BusinessProfile
 
 from .models import BroadcastSession, Campaign, CampaignParticipation
@@ -77,12 +79,79 @@ class BroadcastSessionSerializer(serializers.ModelSerializer):
     vehicle_summary = serializers.SerializerMethodField()
     class Meta:
         model = BroadcastSession
-        fields = ["id", "vehicle", "vehicle_summary", "started_at", "ended_at", "hours", "impressions", "measurement_status", "created_at"]
+        fields = ["id", "vehicle", "vehicle_summary", "started_at", "ended_at", "hours", "plays", "impressions", "measurement_status", "earning_status", "earnings_amount", "created_at"]
         read_only_fields = fields
+    earnings_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     def get_vehicle_summary(self, obj):
         vehicle = obj.vehicle
         if not vehicle: return None
         return {"id": vehicle.id, "registration_number": vehicle.registration_number, "vehicle_model": vehicle.vehicle_model, "vehicle_type": vehicle.vehicle_type}
+
+
+class DriverAdvertisingEventSerializer(serializers.ModelSerializer):
+    advertisement = serializers.IntegerField(source="advertisement_id", read_only=True)
+    advertisement_title = serializers.SerializerMethodField()
+    creative_url = serializers.SerializerMethodField()
+    advertiser_name = serializers.SerializerMethodField()
+    campaign = serializers.IntegerField(source="participation.campaign_id", read_only=True)
+    campaign_name = serializers.CharField(source="participation.campaign.name", read_only=True)
+    campaign_status = serializers.CharField(source="participation.campaign.status", read_only=True)
+    driver = serializers.UUIDField(source="participation.driver_id", read_only=True)
+    date = serializers.SerializerMethodField()
+    duration_seconds = serializers.SerializerMethodField()
+    duration_hours = serializers.FloatField(source="hours", read_only=True)
+    earnings = serializers.DecimalField(source="earnings_amount", max_digits=12, decimal_places=2, read_only=True)
+    vehicle = serializers.SerializerMethodField()
+    vehicle_summary = serializers.SerializerMethodField()
+    is_demo = serializers.BooleanField(source="participation.campaign.is_demo", read_only=True)
+
+    class Meta:
+        model = BroadcastSession
+        fields = [
+            "id", "advertisement", "advertisement_title", "creative_url", "advertiser_name",
+            "campaign", "campaign_name", "campaign_status", "driver", "date", "started_at", "ended_at", "duration_seconds",
+            "duration_hours", "plays", "impressions", "measurement_status", "earnings",
+            "earning_status", "vehicle", "vehicle_summary", "is_demo",
+        ]
+        read_only_fields = fields
+
+    def _advertisement(self, obj):
+        return obj.advertisement or obj.participation.campaign.advertisement
+
+    def get_advertisement_title(self, obj):
+        ad = self._advertisement(obj)
+        return ad.title if ad else obj.participation.campaign.name
+
+    def get_creative_url(self, obj):
+        ad = self._advertisement(obj)
+        if not ad:
+            return None
+        from django.conf import settings
+        return signed_storage_url(settings.SUPABASE_ADS_BUCKET, ad.image)
+
+    def get_advertiser_name(self, obj):
+        business = obj.participation.campaign.business
+        try:
+            profile = business.business_profile
+        except BusinessProfile.DoesNotExist:
+            profile = None
+        return (profile.company_name if profile else "") or business.get_full_name() or business.email
+
+    def get_date(self, obj):
+        return timezone.localtime(obj.started_at).date()
+
+    def get_duration_seconds(self, obj):
+        end = obj.ended_at or timezone.now()
+        return max(0, int((end - obj.started_at).total_seconds()))
+
+    def get_vehicle_summary(self, obj):
+        vehicle = obj.vehicle or obj.participation.vehicle
+        if not vehicle:
+            return None
+        return {"id": vehicle.id, "registration_number": vehicle.registration_number, "vehicle_model": vehicle.vehicle_model}
+
+    def get_vehicle(self, obj):
+        return obj.vehicle_id or obj.participation.vehicle_id
 
 
 class ParticipationSerializer(serializers.ModelSerializer):
@@ -111,7 +180,7 @@ class ParticipationSerializer(serializers.ModelSerializer):
         values = [s.impressions for s in sessions if s.impressions is not None]
         return sum(values) if values else None
     def get_estimated_earnings(self, obj):
-        return round(Decimal(str(self.get_hours(obj))) * obj.campaign.compensation_rate, 2)
+        return round(sum((session.earnings_amount for session in self._sessions(obj)), Decimal("0.00")), 2)
     def get_measurement_status(self, obj):
         statuses = {s.measurement_status for s in self._sessions(obj)}
         if not statuses: return "UNAVAILABLE"

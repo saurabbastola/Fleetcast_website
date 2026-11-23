@@ -1,25 +1,37 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { api, ApiError } from "@/lib/api/client";
-import { driverCampaignApi, type CampaignParticipation } from "@/lib/api/campaigns";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError } from "@/lib/api/client";
+import { getDriverEarnings, type DriverEarningsResponse } from "@/lib/api/drivers";
 
-type Summary={broadcast_hours:number|null;impressions:number|null;earnings:number|null;measurement_status:string};
-const money=(value:number|string|null)=>value==null?"Not available":Number(value).toLocaleString("en-US",{style:"currency",currency:"USD"});
-const human=(s:string)=>s.replaceAll("_"," ").toLowerCase().replace(/\b\w/g,x=>x.toUpperCase());
+const money=(value:number|string|null|undefined)=>value==null?"$0.00":Number(value).toLocaleString("en-US",{style:"currency",currency:"USD"});
+const clock=(value:string|null)=>value?new Intl.DateTimeFormat(undefined,{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(value)):"In progress";
+const duration=(seconds:number)=>{const minutes=Math.floor(seconds/60);const rest=seconds%60;return `${minutes}m ${rest}s`;};
+const date=(value:string)=>new Intl.DateTimeFormat(undefined,{dateStyle:"medium"}).format(new Date(value));
 
 export default function DriverEarningsView(){
-  const [summary,setSummary]=useState<Summary|null>(null);const [items,setItems]=useState<CampaignParticipation[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");
-  useEffect(()=>{Promise.all([api<Summary>("/driver/dashboard/"),driverCampaignApi.mine()]).then(([s,rows])=>{setSummary(s);setItems(rows);}).catch(e=>setError(e instanceof ApiError?e.message:e.message||"Earnings could not be loaded.")).finally(()=>setLoading(false));},[]);
-  if(loading)return <p className="api-state" role="status">Loading activity and earnings…</p>;
-  if(error)return <div className="api-error" role="alert">{error}</div>;
-  const completed=items.filter(item=>item.status==="COMPLETED");
-  const evidence=summary?.measurement_status||"UNAVAILABLE";
-  return <div className="dview"><section className="dview__hello"><div><h1>Activity & earnings</h1><p>Review campaign hours, estimated earnings, and available performance records.</p></div><Link className="btn btn--navy btn--sm" href="/dashboard/campaigns">Browse campaigns</Link></section>
-    {evidence==="DEMO"||evidence==="ESTIMATED"?<p className="measurement-note">{evidence==="DEMO"?"DEMO SAMPLE DATA":"ESTIMATED · Driver timer only"} · Hours are recorded by the driver. Impressions are not independently verified.</p>:null}
-    <section className="dview__metrics"><article className="metric"><p className="metric__label">Recorded broadcast hours</p><p className="metric__value metric__value--small">{summary?.broadcast_hours==null?"Not available":summary.broadcast_hours.toFixed(2)}</p></article><article className="metric"><p className="metric__label">Reported impressions</p><p className="metric__value metric__value--small">{summary?.impressions==null?"Not available":summary.impressions.toLocaleString()}</p></article><article className="metric"><p className="metric__label">Estimated compensation</p><p className="metric__value metric__value--small">{money(summary?.earnings??null)}</p></article></section>
-    <section className="dcard dcard--wide"><header className="dcard__head"><h2>Campaign performance</h2></header>{items.length===0?<p className="api-empty">No campaign activity has been recorded yet.</p>:<div className="dtable__wrap"><table className="dtable"><thead><tr><th>Campaign</th><th>Status</th><th>Hours</th><th>Impressions</th><th>Rate</th><th>Estimated pay</th><th>Evidence</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><th>{item.campaign.name}{item.campaign.is_demo&&<span className="demo-badge">DEMO</span>}</th><td>{human(item.status)}</td><td>{item.hours.toFixed(2)}</td><td>{item.impressions==null?"Not available":item.impressions.toLocaleString()}</td><td>{money(item.campaign.compensation_rate||null)} / hr</td><td>{money(item.estimated_earnings)}</td><td>{item.measurement_status}</td></tr>)}</tbody></table></div>}</section>
-    <section className="dcard dcard--wide"><header className="dcard__head"><h2>Completed campaigns</h2></header>{completed.length===0?<p className="api-empty">No completed campaigns yet.</p>:<ul className="driver-history">{completed.map(item=><li key={item.id}><strong>{item.campaign.name}</strong><span>{item.hours.toFixed(2)} hours · {item.measurement_status.toLowerCase()}</span><span>{money(item.estimated_earnings)} estimated</span></li>)}</ul>}</section>
+  const [data,setData]=useState<DriverEarningsResponse|null>(null);
+  const [dateFrom,setDateFrom]=useState("");const [dateTo,setDateTo]=useState("");const [status,setStatus]=useState("");
+  const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [page,setPage]=useState(1);
+  const load=useCallback(()=>{setLoading(true);setError("");getDriverEarnings({dateFrom,dateTo,status,page}).then(setData).catch(e=>setError(e instanceof ApiError?e.message:"Earnings could not be loaded. Please try again.")).finally(()=>setLoading(false));},[dateFrom,dateTo,status,page]);
+  useEffect(()=>{void load();},[load]);
+  const summary=data?.summary;
+  const metrics=[["Total earnings",summary?.total_earnings],["Earnings today",summary?.today],["Earnings this week",summary?.this_week],["Earnings this month",summary?.this_month],["Pending earnings",summary?.pending_earnings],["Paid earnings",summary?.paid_earnings]] as const;
+  return <div className="dview driver-earnings">
+    <section className="dview__hello"><div><h1>Earnings</h1><p>Track advertising income calculated from recorded broadcast time and campaign rates.</p></div></section>
+    {error&&<div className="api-error" role="alert">{error} <button type="button" onClick={()=>void load()}>Try again</button></div>}
+    {summary&&<section className="dview__metrics driver-earnings__metrics" aria-label="Earnings summary">{metrics.map(([label,value])=><article className="metric" key={label}><p className="metric__label">{label}</p><p className="metric__value metric__value--small">{money(value)}</p></article>)}</section>}
+    <section className="dcard dcard--wide"><header className="dcard__head"><div><h2>Earnings history</h2><p>Each row corresponds to one broadcast interval; demo records are labeled.</p></div></header>
+      <form className="earnings-filters" onSubmit={e=>{e.preventDefault();setPage(1);void load();}}>
+        <label>From<input type="date" value={dateFrom} onChange={e=>{setPage(1);setDateFrom(e.target.value);}}/></label>
+        <label>To<input type="date" value={dateTo} onChange={e=>{setPage(1);setDateTo(e.target.value);}}/></label>
+        <label>Payment status<select value={status} onChange={e=>{setPage(1);setStatus(e.target.value);}}><option value="">All statuses</option><option value="PENDING">Pending</option><option value="PAID">Paid</option></select></label>
+        <button className="btn btn--navy btn--sm" type="submit">Apply filters</button>
+        <button className="earnings-filters__reset" type="button" onClick={()=>{setDateFrom("");setDateTo("");setStatus("");setPage(1);}}>Clear</button>
+      </form>
+      {loading?<p className="api-state" role="status">Loading earnings history…</p>:!data?.results.length?<p className="api-empty">No advertising earnings match this range.</p>:<div className="dtable__wrap"><table className="dtable driver-earnings__table"><thead><tr><th>Date</th><th>Advertisement</th><th>Broadcasting time</th><th>Duration</th><th>Impressions</th><th>Earnings</th><th>Status</th></tr></thead><tbody>{data.results.map(event=><tr key={event.id}><td>{date(event.started_at)}</td><th scope="row">{event.advertisement_title}{event.is_demo&&<span className="demo-badge">DEMO</span>}<small className="earnings-advertiser">{event.advertiser_name}</small></th><td>{clock(event.started_at)} – {clock(event.ended_at)}</td><td>{duration(event.duration_seconds)}</td><td>{event.impressions==null?"Not reported":event.impressions.toLocaleString()}<small className="earnings-advertiser">{event.measurement_status}</small></td><td>{money(event.earnings)}</td><td><span className={`pill ${event.earning_status==="PAID"?"pill--live":"pill--draft"}`}>{event.earning_status.toLowerCase()}</span></td></tr>)}</tbody></table></div>}
+      {data&&data.count>data.page_size&&<div className="earnings-pagination"><span>{data.count} matching broadcasts</span><button type="button" disabled={page<=1||loading} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {data.page}</span><button type="button" disabled={page*data.page_size>=data.count||loading} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
+    </section>
+    <p className="measurement-note">Demo earnings and impression values are for product walkthroughs only. Earnings use the campaign’s recorded hourly compensation rate; impressions are labeled by their measurement source.</p>
   </div>;
 }

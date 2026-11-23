@@ -20,9 +20,17 @@ class Command(BaseCommand):
         if not settings.DEBUG or not settings.FLEETCAST_DEMO_MODE:
             raise CommandError("Demo fleet seeding is disabled. Set DEBUG=True and FLEETCAST_DEMO_MODE=True only in your development environment.")
         email = options["email"].strip().lower()
-        user = User.objects.filter(email__iexact=email, workspaces__role=User.Role.DRIVER, is_active=True).distinct().first()
+        user = User.objects.filter(email__iexact=email, workspaces__role=User.Role.DRIVER).distinct().first()
         if user is None:
-            raise CommandError("No active existing account with this email and a Driver workspace was found. No account was created.")
+            raise CommandError("No existing account with this email and a Driver workspace was found. Register through the frontend first; no account was created.")
+        if email == settings.DEVELOPER_EMAIL and (not user.is_active or not user.email_verified):
+            # Explicitly authorized dev-only verification for the named test
+            # account; registration must still establish its password first.
+            user.is_active = True
+            user.email_verified = True
+            user.save(update_fields=["is_active", "email_verified", "updated_at"])
+        elif not user.is_active or not user.email_verified:
+            raise CommandError("The account must complete the normal email verification flow before demo seeding.")
 
         DriverProfile.objects.get_or_create(user=user)
         registration_number = f"DEMO-{user.pk.hex[:8].upper()}"

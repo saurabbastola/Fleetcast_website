@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
+from django.test import override_settings
 from django.core.management import call_command
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -114,6 +115,7 @@ class CampaignParticipationWorkflowTests(APITestCase):
         self.assertEqual(session["hours"], 1.0)
         self.assertIn("T", session["started_at"])
 
+    @override_settings(FLEETCAST_DEMO_MODE=True)
     def test_driver_can_try_demo_campaign_and_assign_pending_vehicle(self):
         # Demo workflow intentionally works before driver and vehicle verification.
         DriverProfile.objects.filter(user=self.driver).update(verification_status=DriverProfile.Verification.PENDING)
@@ -150,6 +152,52 @@ class CampaignParticipationWorkflowTests(APITestCase):
         self.assertEqual(started.status_code, status.HTTP_201_CREATED)
         session = BroadcastSession.objects.get(pk=started.data["session_id"])
         self.assertEqual(session.measurement_status, BroadcastSession.MeasurementStatus.DEMO)
+        self.assertEqual(session.advertisement_id, session.participation.campaign.advertisement_id)
+
+    def test_starting_another_ad_closes_the_previous_broadcast_interval(self):
+        first = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.ACCEPTED)
+        next_campaign = Campaign.objects.create(
+            business=self.business, advertisement=self.ad, name="Next active sample", status=Campaign.Status.ACTIVE,
+            start_date=timezone.localdate(), end_date=timezone.localdate()+timedelta(days=1), available_driver_slots=2,
+            compensation_rate=Decimal("24.00"),
+        )
+        CampaignParticipation.objects.create(campaign=next_campaign, driver=self.driver, status=CampaignParticipation.Status.ACCEPTED)
+        self.auth(self.driver)
+        first_start = self.client.post(f"/api/v1/driver/campaigns/{self.campaign.id}/start_broadcast/", {}, format="json")
+        self.assertEqual(first_start.status_code, status.HTTP_201_CREATED)
+        second_start = self.client.post(f"/api/v1/driver/campaigns/{next_campaign.id}/start_broadcast/", {}, format="json")
+        self.assertEqual(second_start.status_code, status.HTTP_201_CREATED)
+        old_event = BroadcastSession.objects.get(pk=first_start.data["session_id"])
+        new_event = BroadcastSession.objects.get(pk=second_start.data["session_id"])
+        self.assertLessEqual(old_event.started_at, old_event.ended_at)
+        self.assertIsNone(new_event.ended_at)
+        self.assertEqual(new_event.compensation_rate_snapshot, Decimal("24.00"))
+        self.assertEqual(BroadcastSession.objects.filter(participation__driver=self.driver, ended_at__isnull=True).count(), 1)
+
+    def test_driver_dashboard_and_earnings_api_return_exact_event_and_derived_pay(self):
+        participation = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.COMPLETED)
+        started = timezone.now() - timedelta(minutes=20)
+        event = BroadcastSession.objects.create(
+            participation=participation, vehicle=None, started_at=started, ended_at=started+timedelta(minutes=15),
+            plays=3, impressions=150, measurement_status=BroadcastSession.MeasurementStatus.ESTIMATED,
+            compensation_rate_snapshot=Decimal("20.00"),
+        )
+        self.auth(self.driver)
+        dashboard = self.client.get("/api/v1/driver/dashboard/")
+        self.assertEqual(dashboard.status_code, status.HTTP_200_OK)
+        self.assertEqual(dashboard.data["advertisements_displayed"], 3)
+        self.assertEqual(dashboard.data["estimated_impressions"], 150)
+        self.assertIsNone(dashboard.data["verified_impressions"])
+        self.assertEqual(dashboard.data["recent_activity"][0]["id"], event.id)
+        self.assertEqual(dashboard.data["recent_activity"][0]["duration_seconds"], 900)
+        history = self.client.get("/api/v1/driver/earnings/?status=PENDING")
+        self.assertEqual(history.status_code, status.HTTP_200_OK)
+        self.assertEqual(history.data["count"], 1)
+        self.assertEqual(history.data["results"][0]["earnings"], "5.00")
+        self.assertEqual(history.data["results"][0]["earning_status"], "PENDING")
+        self.assertIn("T", history.data["results"][0]["started_at"])
+        self.auth(self.business)
+        self.assertEqual(self.client.get("/api/v1/driver/earnings/").status_code, status.HTTP_403_FORBIDDEN)
 
     def test_pausing_closes_broadcast_notifies_driver_and_removes_campaign(self):
         participation = CampaignParticipation.objects.create(campaign=self.campaign, driver=self.driver, status=CampaignParticipation.Status.ACTIVE, is_current=True)
@@ -175,6 +223,7 @@ class CampaignParticipationWorkflowTests(APITestCase):
         response = self.client.post(f"/api/v1/campaigns/{draft.id}/status/", {"status":"ACTIVE"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @override_settings(FLEETCAST_DEMO_MODE=True)
     def test_demo_seed_is_repeatable_and_marks_metrics_as_demo(self):
         call_command("seed_demo_campaigns", skip_assets=True, verbosity=0)
         first_count = Campaign.objects.filter(is_demo=True).count()
@@ -184,6 +233,11 @@ class CampaignParticipationWorkflowTests(APITestCase):
         test_driver = User.objects.create_user("seed-driver@example.test", role=User.Role.DRIVER, is_active=True, email_verified=True)
         DriverProfile.objects.create(user=test_driver)
         call_command("seed_demo_campaigns", skip_assets=True, driver_email=test_driver.email, verbosity=0)
-        self.assertEqual(BroadcastSession.objects.filter(participation__driver=test_driver, measurement_status=BroadcastSession.MeasurementStatus.DEMO).count(), 2)
+        events = list(BroadcastSession.objects.filter(participation__driver=test_driver, measurement_status=BroadcastSession.MeasurementStatus.DEMO).order_by("started_at"))
+        self.assertEqual(len(events), 3)
+        self.assertEqual([event.started_at.minute for event in events], [0, 15, 30])
+        self.assertTrue(all((event.ended_at - event.started_at).total_seconds() == 900 for event in events))
+        self.assertEqual([event.plays for event in events], [10, 12, 9])
+        self.assertEqual([event.earning_status for event in events], [BroadcastSession.EarningStatus.PAID, BroadcastSession.EarningStatus.PENDING, BroadcastSession.EarningStatus.PENDING])
         call_command("seed_demo_campaigns", skip_assets=True, driver_email=test_driver.email, verbosity=0)
-        self.assertEqual(BroadcastSession.objects.filter(participation__driver=test_driver, measurement_status=BroadcastSession.MeasurementStatus.DEMO).count(), 2)
+        self.assertEqual(BroadcastSession.objects.filter(participation__driver=test_driver, measurement_status=BroadcastSession.MeasurementStatus.DEMO).count(), 3)

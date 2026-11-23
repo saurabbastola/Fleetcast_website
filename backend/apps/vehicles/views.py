@@ -27,7 +27,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         sessions = list(BroadcastSession.objects.filter(
             Q(vehicle=vehicle) | Q(vehicle__isnull=True, participation__vehicle=vehicle),
         ).select_related(
-            "vehicle", "participation__campaign__business__business_profile", "participation__campaign__advertisement",
+            "vehicle", "advertisement", "participation__campaign__business__business_profile", "participation__campaign__advertisement",
         ).order_by("-started_at", "-pk"))
         activity = []
         for session in sessions:
@@ -35,7 +35,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
             business = campaign.business
             try: profile = business.business_profile
             except BusinessProfile.DoesNotExist: profile = None
-            advertisement = campaign.advertisement
+            advertisement = session.advertisement or campaign.advertisement
             activity.append({
                 **BroadcastSessionSerializer(session).data,
                 "campaign_id": campaign.id,

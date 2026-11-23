@@ -83,11 +83,19 @@ class BroadcastSession(models.Model):
         ESTIMATED = "ESTIMATED", "Estimated"
         VERIFIED = "VERIFIED", "Verified"
 
+    class EarningStatus(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        PAID = "PAID", "Paid"
+
     participation = models.ForeignKey(CampaignParticipation, on_delete=models.CASCADE, related_name="broadcast_sessions")
     vehicle = models.ForeignKey("vehicles.Vehicle", null=True, blank=True, on_delete=models.SET_NULL, related_name="broadcast_sessions")
+    advertisement = models.ForeignKey("advertisements.Advertisement", null=True, blank=True, on_delete=models.SET_NULL, related_name="broadcast_sessions")
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
     impressions = models.PositiveBigIntegerField(null=True, blank=True)
+    plays = models.PositiveIntegerField(null=True, blank=True, default=None)
+    compensation_rate_snapshot = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    earning_status = models.CharField(max_length=12, choices=EarningStatus.choices, default=EarningStatus.PENDING, db_index=True)
     measurement_status = models.CharField(max_length=12, choices=MeasurementStatus.choices, default=MeasurementStatus.ESTIMATED, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -103,3 +111,15 @@ class BroadcastSession(models.Model):
         from django.utils import timezone
         end = self.ended_at or timezone.now()
         return round(max(0, (end - self.started_at).total_seconds()) / 3600, 2)
+
+    @property
+    def earnings_amount(self):
+        """Calculate pay from this event's snapshotted hourly campaign rate."""
+        from decimal import Decimal, ROUND_HALF_UP
+        from django.utils import timezone
+        rate = self.compensation_rate_snapshot
+        if rate is None:
+            rate = self.participation.campaign.compensation_rate
+        end = self.ended_at or timezone.now()
+        amount = Decimal(str(max(0, (end - self.started_at).total_seconds()))) / Decimal("3600") * rate
+        return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

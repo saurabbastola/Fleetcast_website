@@ -33,9 +33,9 @@ function NavIcon({ name }: { name: DashNavItem["icon"] }) {
 
 function navFor(role: string): DashNavItem[] {
   if (role === "DRIVER") return [
-    {label:"Overview",href:"/dashboard",icon:"home"},{label:"Driver Activity",href:"/dashboard/campaigns",icon:"megaphone"},{label:"Vehicles",href:"/dashboard/vehicles",icon:"truck"},
+    {label:"Dashboard",href:"/dashboard",icon:"home"},{label:"Earnings",href:"/dashboard/earnings",icon:"chart"},{label:"Vehicle",href:"/dashboard/vehicles",icon:"truck"},
     {label:"Profile",href:"/dashboard/profile",icon:"gear"},{label:"Notifications",href:"/dashboard/notifications",icon:"chart"},
-    {label:"Earnings",href:"/dashboard/earnings",icon:"chart"},{label:"Settings",href:"/dashboard/settings",icon:"gear"},
+    {label:"Settings",href:"/dashboard/settings",icon:"gear"},
   ];
   if (role === "ADMIN") return [
     {label:"Overview",href:"/dashboard/admin",icon:"home"},{label:"Users",href:"/dashboard/admin/users",icon:"gear"},
@@ -67,7 +67,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     if (session.status === "signedOut" && !session.byUser) router.replace("/login");
     if (account && pathname.startsWith("/dashboard/admin") && account.role !== "ADMIN") router.replace("/dashboard");
     if (account && ["/dashboard/advertisements", "/dashboard/payments"].some((p) => pathname.startsWith(p)) && account.role !== "BUSINESS") router.replace("/dashboard");
-    if (account && pathname.startsWith("/dashboard/campaigns") && !["BUSINESS", "DRIVER"].includes(account.role)) router.replace("/dashboard");
+    if (account && pathname.startsWith("/dashboard/campaigns") && account.role !== "BUSINESS") router.replace("/dashboard");
     if (account && ["/dashboard/vehicles", "/dashboard/earnings"].some((p) => pathname.startsWith(p)) && account.role !== "DRIVER") router.replace("/dashboard");
   }, [session, router, account, pathname]);
 
